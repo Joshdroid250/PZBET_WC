@@ -7,22 +7,22 @@ BetBot es un bot de Discord diseñado para gestionar un sistema de apuestas depo
 ## 🚀 Funcionalidades Principales
 
 ### ⚽ Sistema de Apuestas
-- **Apuestas Individuales**: Apuesta a ganador local, visitante o empate directamente desde menús interactivos.
-- **Parlays (Combinadas)**: Constructor visual de apuestas múltiples. Multiplica tus ganancias acertando varios partidos en una sola jugada.
-- **Cuotas Dinámicas**: Multiplicadores en tiempo real basados en el volumen total del pozo y la inyección de la casa.
-- **Cashout Interactivo**: Retira tu apuesta antes de que el partido termine y recupera el 80% de tu inversión.
+- **Apuestas Individuales**: Apuesta a ganador local, visitante o empate desde menús privados.
+- **Parlays (Combinadas)**: Constructor visual para agrupar varios partidos en una sola jugada y maximizar ganancias.
+- **Cuotas Dinámicas**: Multiplicadores en tiempo real que se ajustan según el volumen de apuestas y el bono de la casa.
+- **Análisis de Pozo (`/pozo`)**: Herramienta pública para ver la liquidez y las cuotas actuales de cualquier partido.
+- **Cashout**: Retira tus jugadas antes del pitazo final y recupera el 80% de tu dinero.
 
 ### 💰 Economía y Usuario
-- **Bono de Bienvenida**: Recibe $100.00 monedas virtuales al registrarte con `!join`.
-- **Recarga Diaria Automática**: Si tu balance llega a $0, el bot te regala **$15.00** cada 24 horas (persistente a reinicios).
-- **Roles por Desempeño**: Sistema dinámico que asigna roles de Discord (ej: Broke, Gambler, Pro) según el balance del usuario.
-- **Ranking Global (`!top`)**: Tabla de posiciones con los 10 usuarios más ricos del servidor.
-- **Historial Detallado**: Consulta tus apuestas resueltas o mira el historial global con `!historial_all`.
+- **Bono de Bienvenida**: Recibe $100.00 monedas virtuales al unirte con `/join`.
+- **Recarga Diaria Automática**: Si te quedas sin fondos, el bot te regala **$15.00** cada 24 horas (persistente a reinicios).
+- **Roles por Desempeño**: Sistema automático de rangos de Discord (Broke, Gambler, Pro) según tu balance actual.
+- **Ranking Global (`/top`)**: Tabla de posiciones pública para ver quién es el apostador más exitoso del servidor.
 
-### 🤖 Automatización y Optimización
-- **Monitoreo Inteligente**: El bot optimiza las peticiones a la API deportiva, entrando en modo ahorro cuando no hay partidos próximos.
-- **Anuncios Automáticos**: Notificaciones en tiempo real cuando un partido finaliza, mencionando a los ganadores.
-- **Persistencia Total**: Base de datos SQLite para asegurar que ningún saldo o apuesta se pierda tras un reinicio.
+### 🤖 Automatización y UX
+- **Marcador en Vivo**: Un mensaje dinámico en el canal de anuncios que se actualiza automáticamente y se borra al terminar el partido.
+- **Mensajes Efímeros**: Los menús de apuestas son privados; solo tú puedes verlos e interactuar con ellos, manteniendo el chat limpio y seguro.
+- **Sincronización Total**: Comandos Slash modernizados con autocompletado y sugerencias nativas.
 
 ---
 
@@ -31,34 +31,27 @@ BetBot es un bot de Discord diseñado para gestionar un sistema de apuestas depo
 ### Requisitos
 - Python 3.10 o superior.
 - Una cuenta en [API-Football](https://www.football-data.org/).
-- Un Token de Bot de Discord (vía Discord Developer Portal).
+- Token de Bot con Intents de `Message Content` y `Server Members`.
 
 ### Pasos
-1. **Clonar el repositorio:**
+1. **Clonar e Instalar:**
    ```bash
    git clone https://github.com/tu-usuario/betbot.git
-   cd betbot
-   ```
-
-2. **Crear entorno virtual e instalar dependencias:**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # En Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
-3. **Configurar variables de entorno (`.env`):**
-   Crea un archivo `.env` en la raíz con el siguiente contenido:
+2. **Configurar `.env`:**
    ```env
-   DISCORD_TOKEN=tu_token_aqui
-   FOOTBALL_API_KEY=tu_api_key_aqui
-   ANNOUNCEMENT_CHANNEL_ID=id_del_canal_de_anuncios
+   DISCORD_TOKEN=...
+   FOOTBALL_API_KEY=...
+   ANNOUNCEMENT_CHANNEL_ID=...
    HOUSE_INJECTION=50.0
-   COMPETITION_CODE=PL  # Ejemplo: PL (Premier League), WC (Mundial), etc.
+   COMPETITION_CODE=PL
    ```
 
-4. **Iniciar el bot:**
+3. **Migrar e Iniciar:**
    ```bash
+   python migrate_db.py
    python bot.py
    ```
 
@@ -66,53 +59,20 @@ BetBot es un bot de Discord diseñado para gestionar un sistema de apuestas depo
 
 ## 📖 Comandos Disponibles
 
-| Comando | Descripción |
-| :--- | :--- |
-| `!ayuda` | Muestra la lista interactiva de comandos. |
-| `!reglas` | Explica el funcionamiento del pozo y premios. |
-| `!join` | Crea tu cuenta inicial con $100. |
-| `!balance` | Muestra tu saldo actual. |
-| `!matches` | Abre el menú interactivo para apostar en próximos partidos. |
-| `!parlay` | Inicia el constructor de apuestas combinadas. |
-| `!mis_parlays`| Muestra el estado de tus combinadas activas. |
-| `!cashout` | Abre el menú interactivo para retirar apuestas. |
-| `!historial` | Consulta tus últimas 10 apuestas resueltas. |
-| `!historial_all` | Muestra el historial global de todos los usuarios. |
-| `!top` | Muestra el ranking de los 10 usuarios más ricos. |
-| `!vivo` | Muestra partidos que se están jugando actualmente. |
-| `!config_roles` | [ADMIN] Configura roles y umbrales (broke, gambler, pro). |
-| `!debug_resolve` | [ADMIN] Fuerza la resolución de un partido y envía anuncios. |
+| Comando | Visibilidad | Descripción |
+| :--- | :--- | :--- |
+| `/join` | Privado | Regístrate y recibe $100. |
+| `/balance` | Privado | Mira tu saldo actual. |
+| `/matches` | Privado | Menú para apostar en próximos partidos. |
+| `/vivo` | Privado | Mira partidos que se juegan ahora mismo. |
+| `/parlay` | Privado | Constructor de apuestas combinadas. |
+| `/pozo <id>` | **Público** | Análisis de volumen y cuotas del partido. |
+| `/top` | **Público** | Ranking de los 10 más ricos. |
+| `/historial_all`| **Público** | Historial de apuestas de todo el servidor. |
+| `/ayuda` | Privado | Guía interactiva de comandos. |
+| `/config_roles` | Admin | Configura roles por balance. |
 
 ---
-
-## 🎭 Sistema de Roles por Desempeño
-El bot permite motivar a los usuarios mediante la asignación automática de roles según su balance:
-- **Broke**: Usuarios con saldo inicial o bajo.
-- **Gambler**: Usuarios que han demostrado consistencia.
-- **Pro**: La élite de los apostadores con los balances más altos.
-
-**Configuración rápida para Administradores:**
-```text
-!config_roles gambler @RolGambler 500
-!config_roles pro @RolPro 2000
-```
-*El bot asignará y quitará estos roles en tiempo real tras cada resolución de partido.*
-
----
-
-## 🧪 Testing
-El bot incluye una suite de pruebas para validar la lógica de negocio:
-```bash
-$env:PYTHONPATH="."; python tests/test_logic.py
-```
-
----
-
-## 📄 Licencia
-Este proyecto está bajo la Licencia MIT. ¡Siéntete libre de usarlo y mejorarlo!
-
----
-**Desarrollado para la competencia de Bots 2026.** 🏆
 
 ## 🤖 Créditos
-Este bot ha sido desarrollado y optimizado con la asistencia de **Gemini**, la inteligencia artificial de Google, colaborando en la arquitectura, lógica de apuestas y diseño de la interfaz de usuario.
+Este bot ha sido desarrollado y optimizado con la asistencia de **Gemini**, la inteligencia artificial de Google, colaborando en la arquitectura asíncrona, lógica de apuestas y diseño de la interfaz de usuario.

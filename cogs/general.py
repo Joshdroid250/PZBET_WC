@@ -37,16 +37,16 @@ class General(commands.Cog):
                 description=f"{ctx.author.mention}, tu saldo actual es de **${balance:.2f}**.",
                 color=discord.Color.gold()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, ephemeral=True)
         else:
             await database.register_user(user_id)
             embed = discord.Embed(
                 title="¡Bienvenido al Bot de Apuestas! 🏆",
-                description=f"Hola {ctx.author.mention}, te hemos asignado **$100.00** monedas fakes para que empieces a apostar en el Mundial.",
+                description=f"Hola {ctx.author.mention}, te hemos asignado **$100.00** monedas fakes para que empieces a apostar.",
                 color=discord.Color.green()
             )
             embed.set_footer(text="Usa /matches para ver los partidos disponibles.")
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name='balance')
     async def balance(self, ctx):
@@ -59,14 +59,14 @@ class General(commands.Cog):
                 description=f"{ctx.author.mention}, tienes **${balance:.2f}** monedas.",
                 color=discord.Color.blue()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, ephemeral=True)
         else:
             embed = discord.Embed(
                 title="No registrado",
                 description="No tienes una cuenta aún. Usa `/join` para empezar.",
                 color=discord.Color.red()
             )
-            await ctx.send(embed=embed)
+            await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name='marcador')
     async def marcador(self, ctx):
@@ -80,7 +80,7 @@ class General(commands.Cog):
         matches = data.get('matches', []) if data else []
         
         if not matches:
-            await ctx.send("⚽ No hay partidos jugándose en vivo en este momento.")
+            await ctx.send("⚽ No hay partidos jugándose en vivo en este momento.", ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -103,7 +103,7 @@ class General(commands.Cog):
                 inline=False
             )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name='ayuda')
     async def ayuda(self, ctx):
@@ -114,20 +114,20 @@ class General(commands.Cog):
             color=discord.Color.purple()
         )
         embed.add_field(name="👤 Usuario", value="`/join`: Regístrate.\n`/balance`: Mira tu dinero.\n`/historial`: Tus apuestas.\n`/historial_all`: Historial de todos.\n`/top`: Mira el ranking de usuarios.", inline=False)
-        embed.add_field(name="⚽ Apuestas", value="`/matches`: Próximos partidos.\n`/apuestas`: Tus apuestas activas.\n`/parlay`: Crea una apuesta combinada.\n`/mis_parlays`: Mira tus parlays activos.\n`/cashout`: Retira apuestas.\n`/vivo`: Mira los partidos en vivo.\n`/marcador`: Resultados en vivo (goles).\n`/reglas`: Sistema de pozo y premios.", inline=False)
+        embed.add_field(name="⚽ Apuestas", value="`/matches`: Próximos partidos.\n`/apuestas`: Tus apuestas activas.\n`/parlay`: Crea una apuesta combinada.\n`/mis_parlays`: Mira tus parlays activos.\n`/cashout`: Retira apuestas.\n`/vivo`: Mira los partidos en vivo.\n`/pozo <id>`: Mira el volumen y cuotas del pozo (Público).\n`/marcador`: Resultados en vivo (goles).\n`/reglas`: Sistema de pozo y premios.", inline=False)
         
         if ctx.author.guild_permissions.administrator:
             embed.add_field(name="⚙️ Administración", value="`/config_roles`: Configura roles y umbrales.\n`/debug_resolve`: Fuerza resolución de partidos.", inline=False)
             
         embed.set_footer(text="¡Buena suerte en tus apuestas!")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name='top')
     async def top(self, ctx):
         """Muestra el ranking de los 10 usuarios más ricos."""
         top_users = await database.get_top_users(10)
         if not top_users:
-            await ctx.send("No hay usuarios registrados aún.")
+            await ctx.send("No hay usuarios registrados aún.", ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -186,7 +186,7 @@ class General(commands.Cog):
             inline=False
         )
         embed.set_footer(text="Usa /matches para empezar a apostar.")
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name='config_roles')
     @commands.has_permissions(administrator=True)
@@ -194,7 +194,7 @@ class General(commands.Cog):
         """[ADMIN] Configura roles por desempeño. Tipos: broke, gambler, pro."""
         type = type.lower()
         if type not in ['broke', 'gambler', 'pro']:
-            await ctx.send("❌ Tipo inválido. Usa: `broke`, `gambler` o `pro`.")
+            await ctx.send("❌ Tipo inválido. Usa: `broke`, `gambler` o `pro`.", ephemeral=True)
             return
         
         await database.set_setting(f"role_{type}", role.id)
@@ -202,16 +202,16 @@ class General(commands.Cog):
             await database.set_setting(f"threshold_{type}", threshold)
         
         await ctx.send(f"✅ Configurado: Los usuarios **{type}** recibirán el rol {role.mention}" + 
-                       (f" al alcanzar **${threshold:.2f}**." if threshold else "."))
+                       (f" al alcanzar **${threshold:.2f}**." if threshold else "."), ephemeral=True)
 
     @config_roles.error
     async def config_roles_error(self, ctx, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send("❌ Solo los administradores pueden usar este comando.")
+            await ctx.send("❌ Solo los administradores pueden usar este comando.", ephemeral=True)
         elif isinstance(error, commands.BadArgument):
-            await ctx.send("❌ Error en los argumentos. Uso: `/config_roles <tipo> <@rol> [monto]`\nEjemplo: `/config_roles gambler @Apostador 500`.")
+            await ctx.send("❌ Error en los argumentos. Uso: `/config_roles <tipo> <@rol> [monto]`\nEjemplo: `/config_roles gambler @Apostador 500`.", ephemeral=True)
         else:
-            await ctx.send(f"❌ Error al ejecutar el comando: {error}")
+            await ctx.send(f"❌ Error al ejecutar el comando: {error}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(General(bot))
