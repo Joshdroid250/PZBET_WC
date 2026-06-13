@@ -1,0 +1,29 @@
+# Entorno Virtual
+venv/
+.venv/
+env/
+
+# Variables de Entorno (SEGURIDAD)
+.env
+
+# Base de Datos
+*.db
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs y Editores
+.vscode/
+.idea/
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Sistema
+Thumbs.db
+desktop.ini
+.DS_Store
