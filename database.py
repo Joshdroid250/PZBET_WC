@@ -255,6 +255,21 @@ async def get_user_history(user_id, limit=10):
         async with db.execute(query, (user_id, limit)) as cursor:
             return await cursor.fetchall()
 
+async def get_global_history(limit=15):
+    """Returns the most recent resolved bets for all users."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        query = '''
+            SELECT u.user_id, m.home_team, m.away_team, b.amount, b.prediction, b.payout, b.won, m.winner
+            FROM bets b
+            JOIN matches m ON b.match_id = m.match_id
+            JOIN users u ON b.user_id = u.user_id
+            WHERE b.resolved = 1
+            ORDER BY b.bet_id DESC
+            LIMIT ?
+        '''
+        async with db.execute(query, (limit,)) as cursor:
+            return await cursor.fetchall()
+
 async def give_daily_bonus(amount, threshold=0.0):
     """Gives a bonus to all users whose balance is below or equal to the threshold."""
     async with aiosqlite.connect(DB_PATH) as db:

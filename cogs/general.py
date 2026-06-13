@@ -68,6 +68,43 @@ class General(commands.Cog):
             )
             await ctx.send(embed=embed)
 
+    @commands.command(name='marcador')
+    async def marcador(self, ctx):
+        """Muestra los resultados actuales de los partidos en vivo."""
+        import api_football
+        import os
+        competition = os.getenv('COMPETITION_CODE', 'PL')
+        url = f"{api_football.BASE_URL}/competitions/{competition}/matches?status=LIVE"
+        data = await api_football.fetch_json(url)
+        
+        matches = data.get('matches', []) if data else []
+        
+        if not matches:
+            await ctx.send("⚽ No hay partidos jugándose en vivo en este momento.")
+            return
+
+        embed = discord.Embed(
+            title="🏟️ Marcador en Vivo",
+            description="Resultados actuales de la jornada.",
+            color=discord.Color.red()
+        )
+
+        for m in matches:
+            home = m['homeTeam']['name']
+            away = m['awayTeam']['name']
+            score_home = m['score']['fullTime']['home']
+            score_away = m['score']['fullTime']['away']
+            emoji_home = api_football.get_flag_emoji(home)
+            emoji_away = api_football.get_flag_emoji(away)
+            
+            embed.add_field(
+                name=f"{emoji_home} {home} vs {away} {emoji_away}",
+                value=f"**Marcador:** `{score_home} - {score_away}`",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
     @commands.command(name='ayuda')
     async def ayuda(self, ctx):
         """Muestra la lista completa de comandos."""
@@ -76,8 +113,12 @@ class General(commands.Cog):
             description="Usa los comandos de abajo para interactuar con el bot. Para entender cómo funcionan las apuestas, usa `!reglas`.",
             color=discord.Color.purple()
         )
-        embed.add_field(name="👤 Usuario", value="`!join`: Regístrate.\n`!balance`: Mira tu dinero.\n`!historial`: Tus apuestas.\n`!top`: Mira el ranking de usuarios.", inline=False)
-        embed.add_field(name="⚽ Apuestas", value="`!matches`: Próximos partidos.\n`!apuestas`: Tus apuestas activas.\n`!parlay`: Crea una apuesta combinada.\n`!mis_parlays`: Mira tus parlays activos.\n`!cashout <id>`: Cancela apuesta (80% reembolso).\n`!vivo`: Mira los partidos en vivo.\n`!reglas`: Sistema de pozo y premios.", inline=False)
+        embed.add_field(name="👤 Usuario", value="`!join`: Regístrate.\n`!balance`: Mira tu dinero.\n`!historial`: Tus apuestas.\n`!historial_all`: Historial de todos.\n`!top`: Mira el ranking de usuarios.", inline=False)
+        embed.add_field(name="⚽ Apuestas", value="`!matches`: Próximos partidos.\n`!apuestas`: Tus apuestas activas.\n`!parlay`: Crea una apuesta combinada.\n`!mis_parlays`: Mira tus parlays activos.\n`!cashout`: Retira apuestas (80% reembolso).\n`!vivo`: Mira los partidos en vivo.\n`!reglas`: Sistema de pozo y premios.", inline=False)
+        
+        if ctx.author.guild_permissions.administrator:
+            embed.add_field(name="⚙️ Administración", value="`!config_roles`: Configura roles y umbrales.\n`!debug_resolve`: Fuerza resolución de partidos.", inline=False)
+            
         embed.set_footer(text="¡Buena suerte en tus apuestas!")
         await ctx.send(embed=embed)
 
@@ -113,7 +154,38 @@ class General(commands.Cog):
 
     @commands.command(name='reglas')
     async def reglas(self, ctx):
-        # ... (rest of reglas)
+        """Explica el funcionamiento detallado de las apuestas."""
+        embed = discord.Embed(
+            title="⚖️ ¿Cómo funcionan las apuestas?",
+            description="BetBot utiliza un sistema de pozo mutuo con inyección de la casa.",
+            color=discord.Color.blue()
+        )
+        embed.add_field(
+            name="1. El Pozo", 
+            value="Todas las apuestas de los usuarios se acumulan en un pozo único para cada partido.", 
+            inline=False
+        )
+        embed.add_field(
+            name="2. Inyección de la Casa", 
+            value="El bot añade un monto extra (Bono de la Casa) al pozo inicial para asegurar premios atractivos incluso en partidos con pocas apuestas.", 
+            inline=False
+        )
+        embed.add_field(
+            name="3. El Premio", 
+            value="Si aciertas, el pozo total se reparte entre todos los ganadores proporcionalmente a lo que apostaron. ¡Si eres el único ganador, te llevas todo el pozo!", 
+            inline=False
+        )
+        embed.add_field(
+            name="4. Sin Ganadores", 
+            value="Si nadie acierta el resultado, el dinero se queda en el pozo (la casa gana) para financiar futuros bonos.", 
+            inline=False
+        )
+        embed.add_field(
+            name="5. Bono Diario", 
+            value="Si tu balance llega a $0, el bot te regalará **$15.00** automáticamente cada 24 horas.", 
+            inline=False
+        )
+        embed.set_footer(text="Usa !matches para empezar a apostar.")
         await ctx.send(embed=embed)
 
     @commands.command(name='config_roles')
@@ -131,6 +203,15 @@ class General(commands.Cog):
         
         await ctx.send(f"✅ Configurado: Los usuarios **{type}** recibirán el rol {role.mention}" + 
                        (f" al alcanzar **${threshold:.2f}**." if threshold else "."))
+
+    @config_roles.error
+    async def config_roles_error(self, ctx, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ Solo los administradores pueden usar este comando.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("❌ Error en los argumentos. Uso: `!config_roles <tipo> <@rol> [monto]`\nEjemplo: `!config_roles gambler @Apostador 500`.")
+        else:
+            await ctx.send(f"❌ Error al ejecutar el comando: {error}")
 
 async def setup(bot):
     await bot.add_cog(General(bot))

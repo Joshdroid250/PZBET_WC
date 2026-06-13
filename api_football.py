@@ -1,4 +1,5 @@
-import requests
+import aiohttp
+import asyncio
 import os
 from dotenv import load_dotenv
 
@@ -7,35 +8,43 @@ load_dotenv()
 API_KEY = os.getenv('FOOTBALL_API_KEY')
 BASE_URL = 'https://api.football-data.org/v4'
 
-def get_upcoming_matches(competition='PL'):
-    url = f'{BASE_URL}/competitions/{competition}/matches?status=SCHEDULED'
+async def fetch_json(url):
+    """Auxiliar para realizar peticiones GET asíncronas con manejo de desconexión."""
     headers = {'X-Auth-Token': API_KEY}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get('matches', [])
-    else:
-        print(f"Error fetching matches: {response.status_code} - {response.text}")
-        return []
-
-def get_match_details(match_id):
-    url = f'{BASE_URL}/matches/{match_id}'
-    headers = {'X-Auth-Token': API_KEY}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Error fetching match details: {response.status_code} - {response.text}")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=10) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 429:
+                    print("⚠️ API Rate Limit alcanzado. Esperando...")
+                    return None
+                else:
+                    print(f"Error en API ({url}): {response.status}")
+                    return None
+    except aiohttp.ClientError as e:
+        print(f"📡 Error de conexión (reintentando en próximo ciclo): {e}")
+        return None
+    except asyncio.TimeoutError:
+        print(f"⏱️ Tiempo de espera agotado para la API: {url}")
+        return None
+    except Exception as e:
+        print(f"❌ Error inesperado en fetch_json: {e}")
         return None
 
-def get_finished_matches(competition='PL'):
+async def get_upcoming_matches(competition='PL'):
+    url = f'{BASE_URL}/competitions/{competition}/matches?status=SCHEDULED'
+    data = await fetch_json(url)
+    return data.get('matches', []) if data else []
+
+async def get_match_details(match_id):
+    url = f'{BASE_URL}/matches/{match_id}'
+    return await fetch_json(url)
+
+async def get_finished_matches(competition='PL'):
     url = f'{BASE_URL}/competitions/{competition}/matches?status=FINISHED'
-    headers = {'X-Auth-Token': API_KEY}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get('matches', [])
-    else:
-        print(f"Error fetching finished matches: {response.status_code} - {response.text}")
-        return []
+    data = await fetch_json(url)
+    return data.get('matches', []) if data else []
 
 def get_flag_emoji(country_name):
     # Mapeo de nombres de países a emojis de banderas
@@ -50,8 +59,7 @@ def get_flag_emoji(country_name):
     return mapping.get(country_name, '⚽')
 
 def get_flag_url(country_name):
-    # Usamos flagpedia.net que es muy confiable para imágenes
-    # Necesitamos un mapeo básico de nombres de la API a códigos de país
+    # Mapeo básico de nombres de la API a códigos de país
     mapping = {
         'Argentina': 'ar', 'Brazil': 'br', 'France': 'fr', 'Spain': 'es', 'Germany': 'de',
         'Portugal': 'pt', 'England': 'gb-eng', 'Mexico': 'mx', 'USA': 'us', 'United States': 'us',

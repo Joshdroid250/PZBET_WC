@@ -43,7 +43,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             return
 
         # Verificar si el partido sigue abierto
-        match_info = api_football.get_match_details(self.match_id)
+        match_info = await api_football.get_match_details(self.match_id)
         if not match_info or match_info['status'] == 'FINISHED':
             await interaction.response.send_message("❌ Este partido ya ha finalizado.", ephemeral=True)
             return
@@ -160,7 +160,7 @@ class ParlayMatchSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         match_id = int(self.values[0])
-        match_info = api_football.get_match_details(match_id)
+        match_info = await api_football.get_match_details(match_id)
         
         home = match_info['homeTeam']['name']
         away = match_info['awayTeam']['name']
@@ -203,7 +203,7 @@ class MatchSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         match_id = int(self.values[0])
-        match_info = api_football.get_match_details(match_id)
+        match_info = await api_football.get_match_details(match_id)
         
         home = match_info['homeTeam']['name']
         away = match_info['awayTeam']['name']
@@ -331,6 +331,7 @@ class CashoutView(discord.ui.View):
 class Betting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._last_check_time = 0 # Inicializar para forzar la primera corrida
         self.check_matches.start()
 
     def cog_unload(self):
@@ -340,7 +341,7 @@ class Betting(commands.Cog):
     async def matches(self, ctx):
         """Lista los partidos en un menú desplegable para evitar spam."""
         competition = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = api_football.get_upcoming_matches(competition)
+        upcoming = await api_football.get_upcoming_matches(competition)
         
         if not upcoming:
             await ctx.send("No hay partidos programados próximamente.")
@@ -377,12 +378,14 @@ class Betting(commands.Cog):
             multiplier = total_pool / pred_pool if pred_pool > 0 else 1.0
             if multiplier > 10.0: multiplier = 10.0
             
-            pred_text = pred.replace('_', ' ')
+            # Mapear predicción a nombre real
+            pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            
             embed.add_field(
                 name=f"{home} vs {away}",
                 value=(
                     f"**Monto:** ${amount:.2f}\n"
-                    f"**Predicción:** {pred_text}\n"
+                    f"**Predicción:** {pred_name}\n"
                     f"**Multiplicador en vivo:** x{multiplier:.2f}\n"
                     f"**Pozo Total:** ${total_pool:.2f}\n"
                     f"**ID:** {m_id}"
@@ -424,6 +427,37 @@ class Betting(commands.Cog):
         except Exception as e:
             await ctx.send("❌ Ocurrió un error al cargar tu historial.")
 
+    @commands.command(name='historial_all')
+    async def historial_all(self, ctx):
+        """Muestra las últimas 15 apuestas resueltas de todos los usuarios."""
+        try:
+            history = await database.get_global_history(15)
+            if not history:
+                embed = discord.Embed(title="📜 Historial Global Vacío", description="Nadie ha completado ninguna apuesta todavía.", color=discord.Color.light_grey())
+                await ctx.send(embed=embed)
+                return
+
+            embed = discord.Embed(title="🌍 Historial Global de Apuestas", description="Últimas apuestas resueltas en el servidor.", color=discord.Color.dark_blue())
+            for u_id, home, away, amount, pred, payout, won, winner in history:
+                status = "✅ GANADA" if won else "❌ PERDIDA"
+                user = self.bot.get_user(u_id)
+                if not user:
+                    try: user = await self.bot.fetch_user(u_id)
+                    except: user = None
+                
+                user_name = user.name if user else f"ID:{u_id}"
+                pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+                
+                embed.add_field(
+                    name=f"👤 {user_name} | {home} vs {away}",
+                    value=f"**Resultado:** {status}\n**Predicción:** {pred_name} | **Ganancia:** ${payout:.2f}",
+                    inline=False
+                )
+            await ctx.send(embed=embed)
+        except Exception as e:
+            print(f"Error en historial_all: {e}")
+            await ctx.send("❌ Error al cargar el historial global.")
+
     @commands.command(name='cashout')
     async def cashout(self, ctx, match_id: int):
         """Retira tu apuesta antes de que termine el partido (con una penalización del 20%)."""
@@ -453,13 +487,9 @@ class Betting(commands.Cog):
         """Muestra los partidos en vivo."""
         competition = os.getenv('COMPETITION_CODE', 'PL')
         url = f"{api_football.BASE_URL}/competitions/{competition}/matches?status=LIVE"
-        import requests
-        headers = {'X-Auth-Token': api_football.API_KEY}
-        response = requests.get(url, headers=headers)
+        data = await api_football.fetch_json(url)
         
-        matches = []
-        if response.status_code == 200:
-            matches = response.json().get('matches', [])
+        matches = data.get('matches', []) if data else []
         
         if not matches:
             await ctx.send("No hay partidos jugándose en este momento.")
@@ -506,6 +536,7 @@ class Betting(commands.Cog):
     @tasks.loop(minutes=1)
     async def check_matches(self):
         """Tarea en segundo plano optimizada."""
+        print("🔍 [DEBUG] Iniciando ciclo de revisión de partidos...")
         try:
             current_time = asyncio.get_event_loop().time()
             now_utc = datetime.now(timezone.utc)
@@ -533,13 +564,23 @@ class Betting(commands.Cog):
             matches_to_check = []
 
             for m_id in active_match_ids:
-                match = api_football.get_match_details(m_id)
+                match = await api_football.get_match_details(m_id)
                 if not match: continue
                 matches_to_check.append(match)
-                if match['status'] in ['IN_PLAY', 'PAUSED', 'LIVE']: is_any_match_running = True
+                
+                status = match['status']
+                home = match['homeTeam']['name']
+                away = match['awayTeam']['name']
+                
+                print(f"📌 [LOG] Partido {m_id}: {home} vs {away} | Estado: {status}")
+                
+                if status in ['IN_PLAY', 'PAUSED', 'LIVE']:
+                    is_any_match_running = True
+                
                 start_str = match['utcDate'].replace('Z', '+00:00')
                 start_dt = datetime.fromisoformat(start_str)
-                if earliest_start is None or start_dt < earliest_start: earliest_start = start_dt
+                if earliest_start is None or start_dt < earliest_start:
+                    earliest_start = start_dt
 
             interval = 300
             if is_any_match_running: interval = 60

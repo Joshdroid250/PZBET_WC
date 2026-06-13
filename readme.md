@@ -1,6 +1,6 @@
 # ⚽ BetBot - Simulador de Apuestas para Discord
 
-BetBot es un bot de Discord  diseñado para gestionar un sistema de apuestas deportivas (fútbol) basado en un modelo de **Pozo Mutuo** con inyección de la casa. Incluye una interfaz moderna basada en componentes de Discord (Modals, Selects, Buttons) y un sistema robusto de apuestas combinadas (Parlays).
+BetBot es un bot de Discord diseñado para gestionar un sistema de apuestas deportivas basado en un modelo de **Pozo Mutuo** con inyección de la casa. Incluye una interfaz moderna basada en componentes de Discord (Modals, Selects, Buttons) y un sistema robusto de apuestas combinadas (Parlays).
 
 ---
 
@@ -17,11 +17,11 @@ BetBot es un bot de Discord  diseñado para gestionar un sistema de apuestas dep
 - **Recarga Diaria Automática**: Si tu balance llega a $0, el bot te regala **$15.00** cada 24 horas (persistente a reinicios).
 - **Roles por Desempeño**: Sistema dinámico que asigna roles de Discord (ej: Broke, Gambler, Pro) según el balance del usuario.
 - **Ranking Global (`!top`)**: Tabla de posiciones con los 10 usuarios más ricos del servidor.
-- **Historial Detallado**: Consulta tus últimas 10 apuestas resueltas con resultados reales.
+- **Historial Detallado**: Consulta tus apuestas resueltas o mira el historial global con `!historial_all`.
 
 ### 🤖 Automatización y Optimización
 - **Monitoreo Inteligente**: El bot optimiza las peticiones a la API deportiva, entrando en modo ahorro cuando no hay partidos próximos.
-- **Anuncios Automáticos**: Notificaciones en tiempo real en un canal dedicado cuando un partido finaliza, mencionando a los ganadores.
+- **Anuncios Automáticos**: Notificaciones en tiempo real cuando un partido finaliza, mencionando a los ganadores.
 - **Persistencia Total**: Base de datos SQLite para asegurar que ningún saldo o apuesta se pierda tras un reinicio.
 
 ---
@@ -76,9 +76,12 @@ BetBot es un bot de Discord  diseñado para gestionar un sistema de apuestas dep
 | `!parlay` | Inicia el constructor de apuestas combinadas. |
 | `!mis_parlays`| Muestra el estado de tus combinadas activas. |
 | `!cashout` | Abre el menú interactivo para retirar apuestas. |
-| `!top` | Muestra el ranking de los 10 usuarios con más balance. |
+| `!historial` | Consulta tus últimas 10 apuestas resueltas. |
+| `!historial_all` | Muestra el historial global de todos los usuarios. |
+| `!top` | Muestra el ranking de los 10 usuarios más ricos. |
 | `!vivo` | Muestra partidos que se están jugando actualmente. |
 | `!config_roles` | [ADMIN] Configura roles y umbrales (broke, gambler, pro). |
+| `!debug_resolve` | [ADMIN] Fuerza la resolución de un partido y envía anuncios. |
 
 ---
 
@@ -97,6 +100,13 @@ El bot permite motivar a los usuarios mediante la asignación automática de rol
 
 ---
 
+## 🧪 Testing
+El bot incluye una suite de pruebas para validar la lógica de negocio:
+```bash
+$env:PYTHONPATH="."; python tests/test_logic.py
+```
+
+---
 
 ## 📄 Licencia
 Este proyecto está bajo la Licencia MIT. ¡Siéntete libre de usarlo y mejorarlo!
