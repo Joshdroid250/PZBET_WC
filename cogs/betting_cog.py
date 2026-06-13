@@ -413,7 +413,7 @@ class Betting(commands.Cog):
             embed.add_field(name=f"ID: {p['id']} (${p['amount']:.2f})", value=text, inline=False)
         await ctx.send(embed=embed)
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(seconds=20)
     async def check_matches(self):
         print("🔍 [DEBUG] Revisando partidos...")
         try:
@@ -436,7 +436,12 @@ class Betting(commands.Cog):
                 dt = datetime.fromisoformat(match['utcDate'].replace('Z', '+00:00'))
                 if earliest is None or dt < earliest: earliest = dt
 
-            if not is_live and earliest and (earliest - now_utc).total_seconds() > 600: return
+            # Si no hay nada en vivo y el partido más cercano falta más de 10 min, ahorrar API
+            if not is_live and earliest and (earliest - now_utc).total_seconds() > 600:
+                # Revisar solo cada 5 min (cada 15 ciclos de 20s)
+                if not hasattr(self, '_loop_counter'): self._loop_counter = 0
+                self._loop_counter += 1
+                if self._loop_counter % 15 != 0: return 
 
             for match in matches:
                 m_id, status = match['id'], match['status']
@@ -495,7 +500,7 @@ class Betting(commands.Cog):
                     
                     winner = match['score']['winner']
                     if winner:
-                        payouts = await betting.resolve_match_bets(m_id, winner)
+                        payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
                         channel = self.bot.get_channel(int(channel_id_env)) or await self.bot.fetch_channel(int(channel_id_env))
                         if channel:
                             winner_name = home if winner == 'HOME_TEAM' else away if winner == 'AWAY_TEAM' else "Empate"
@@ -520,7 +525,7 @@ class Betting(commands.Cog):
     async def debug_resolve(self, ctx, match_id: int, winner: str):
         """[ADMIN] Fuerza resolución."""
         winner = winner.upper()
-        await betting.resolve_match_bets(match_id, winner)
+        await betting.resolve_match_bets(self.bot, match_id, winner)
         await betting.resolve_parlays_for_match(self.bot, match_id, winner)
         await ctx.send(f"✅ Resuelto ID {match_id} como {winner}.")
 

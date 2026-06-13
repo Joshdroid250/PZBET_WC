@@ -11,7 +11,7 @@ def get_multiplier_bar(multiplier, max_val=10.0, length=10):
     bar = "█" * filled + "░" * (length - filled)
     return f"[`{bar}`]"
 
-async def resolve_match_bets(match_id, actual_winner):
+async def resolve_match_bets(bot, match_id, actual_winner):
     """
     actual_winner: 'HOME_TEAM', 'AWAY_TEAM', or 'DRAW'
     """

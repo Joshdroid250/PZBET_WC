@@ -50,15 +50,20 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         await database.place_bet(user1, match_id, 60.0, "HOME_TEAM") # Balance: 40
         await database.place_bet(user2, match_id, 40.0, "AWAY_TEAM") # Balance: 60
         
+        # Mock bot object for role updates
+        from unittest.mock import MagicMock
+        mock_bot = MagicMock()
+        mock_bot.guilds = []
+        
         # Pool Total = 60 + 40 + 50 (House) = 150.0
         # Winner is HOME_TEAM. User 1 should get all 150.0.
-        await betting.resolve_match_bets(match_id, "HOME_TEAM")
+        await betting.resolve_match_bets(mock_bot, match_id, "HOME_TEAM")
         
         balance1 = await database.get_user_balance(user1)
         balance2 = await database.get_user_balance(user2)
         
-        self.assertEqual(balance1, 40.0 + 150.0) # 190.0
-        self.assertEqual(balance2, 60.0)         # 60.0
+        self.assertEqual(balance1, 190.0)
+        self.assertEqual(balance2, 60.0)
 
     async def test_no_refund_if_no_winners(self):
         # Ahora el dinero se queda en el pozo si nadie gana
@@ -68,7 +73,11 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         await database.add_or_update_match(match_id, "Team A", "Team B", "SCHEDULED")
         await database.place_bet(user1, match_id, 50.0, "HOME_TEAM") # Balance: 50
         
-        await betting.resolve_match_bets(match_id, "AWAY_TEAM")
+        from unittest.mock import MagicMock
+        mock_bot = MagicMock()
+        mock_bot.guilds = []
+        
+        await betting.resolve_match_bets(mock_bot, match_id, "AWAY_TEAM")
         
         balance = await database.get_user_balance(user1)
         self.assertEqual(balance, 50.0) # Perdido
