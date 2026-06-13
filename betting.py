@@ -42,6 +42,8 @@ async def resolve_match_bets(match_id, actual_winner):
             
             if is_winner:
                 await database.update_balance(user_id, winnings)
+                # Actualizar roles tras ganar
+                await update_user_roles(bot, user_id)
             
             await database.mark_bet_resolved(match_id, user_id, winnings, is_winner)
             
@@ -141,3 +143,48 @@ async def resolve_parlays_for_match(bot, match_id, winner):
                                 embed_p.description = f"Lo siento {name}, una de tus combinaciones del Parlay {p_id} ha fallado."
                                 await channel.send(embed=embed_p)
                 break # Ya procesamos el match_id en este parlay
+
+async def update_user_roles(bot, user_id):
+    """Actualiza los roles del usuario basados en su balance actual."""
+    import database
+    import discord
+    balance = await database.get_user_balance(user_id)
+    if balance is None: return
+
+    settings = await database.get_all_settings()
+    
+    # Mapeo de llaves internas a IDs de Discord guardados
+    role_map = {
+        'broke': int(settings.get('role_broke', 0)),
+        'gambler': int(settings.get('role_gambler', 0)),
+        'pro': int(settings.get('role_pro', 0))
+    }
+    
+    thresholds = {
+        'gambler': float(settings.get('threshold_gambler', 500.0)),
+        'pro': float(settings.get('threshold_pro', 2000.0))
+    }
+
+    # Determinar rango
+    target_key = 'broke'
+    if balance >= thresholds['pro']: target_key = 'pro'
+    elif balance >= thresholds['gambler']: target_key = 'gambler'
+
+    # Aplicar en todos los guilds donde esté el bot
+    for guild in bot.guilds:
+        member = guild.get_member(user_id)
+        if not member:
+            try: member = await guild.fetch_member(user_id)
+            except: continue
+        
+        if member:
+            roles_to_remove = [guild.get_role(role_map[k]) for k in role_map if k != target_key and role_map[k] != 0]
+            role_to_add = guild.get_role(role_map[target_key])
+            
+            try:
+                # Limpiar nulos y roles que no existen
+                roles_to_remove = [r for r in roles_to_remove if r is not None]
+                if roles_to_remove: await member.remove_roles(*roles_to_remove)
+                if role_to_add: await member.add_roles(role_to_add)
+            except Exception as e:
+                print(f"Error actualizando roles para {user_id} en {guild.name}: {e}")

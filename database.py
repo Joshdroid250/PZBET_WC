@@ -141,6 +141,12 @@ async def set_setting(key, value):
         await db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, str(value)))
         await db.commit()
 
+async def get_all_settings():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT key, value FROM settings') as cursor:
+            rows = await cursor.fetchall()
+            return {row[0]: row[1] for row in rows}
+
 async def get_user_balance(user_id):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT balance FROM users WHERE user_id = ?', (user_id,)) as cursor:

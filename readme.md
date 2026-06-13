@@ -15,6 +15,7 @@ BetBot es un bot de Discord  diseñado para gestionar un sistema de apuestas dep
 ### 💰 Economía y Usuario
 - **Bono de Bienvenida**: Recibe $100.00 monedas virtuales al registrarte con `!join`.
 - **Recarga Diaria Automática**: Si tu balance llega a $0, el bot te regala **$15.00** cada 24 horas (persistente a reinicios).
+- **Roles por Desempeño**: Sistema dinámico que asigna roles de Discord (ej: Broke, Gambler, Pro) según el balance del usuario.
 - **Ranking Global (`!top`)**: Tabla de posiciones con los 10 usuarios más ricos del servidor.
 - **Historial Detallado**: Consulta tus últimas 10 apuestas resueltas con resultados reales.
 
@@ -77,6 +78,22 @@ BetBot es un bot de Discord  diseñado para gestionar un sistema de apuestas dep
 | `!cashout` | Abre el menú interactivo para retirar apuestas. |
 | `!top` | Muestra el ranking de los 10 usuarios con más balance. |
 | `!vivo` | Muestra partidos que se están jugando actualmente. |
+| `!config_roles` | [ADMIN] Configura roles y umbrales (broke, gambler, pro). |
+
+---
+
+## 🎭 Sistema de Roles por Desempeño
+El bot permite motivar a los usuarios mediante la asignación automática de roles según su balance:
+- **Broke**: Usuarios con saldo inicial o bajo.
+- **Gambler**: Usuarios que han demostrado consistencia.
+- **Pro**: La élite de los apostadores con los balances más altos.
+
+**Configuración rápida para Administradores:**
+```text
+!config_roles gambler @RolGambler 500
+!config_roles pro @RolPro 2000
+```
+*El bot asignará y quitará estos roles en tiempo real tras cada resolución de partido.*
 
 ---
 
@@ -85,3 +102,7 @@ BetBot es un bot de Discord  diseñado para gestionar un sistema de apuestas dep
 Este proyecto está bajo la Licencia MIT. ¡Siéntete libre de usarlo y mejorarlo!
 
 ---
+**Desarrollado para la competencia de Bots 2026.** 🏆
+
+## 🤖 Créditos
+Este bot ha sido desarrollado y optimizado con la asistencia de **Gemini**, la inteligencia artificial de Google, colaborando en la arquitectura, lógica de apuestas y diseño de la interfaz de usuario.

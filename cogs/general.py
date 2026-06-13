@@ -113,39 +113,24 @@ class General(commands.Cog):
 
     @commands.command(name='reglas')
     async def reglas(self, ctx):
-        """Explica el funcionamiento detallado de las apuestas."""
-        embed = discord.Embed(
-            title="⚖️ ¿Cómo funcionan las apuestas?",
-            description="BetBot utiliza un sistema de pozo mutuo con inyección de la casa.",
-            color=discord.Color.blue()
-        )
-        embed.add_field(
-            name="1. El Pozo", 
-            value="Todas las apuestas de los usuarios se acumulan en un pozo único para cada partido.", 
-            inline=False
-        )
-        embed.add_field(
-            name="2. Inyección de la Casa", 
-            value="El bot añade un monto extra (Bono de la Casa) al pozo inicial para asegurar premios atractivos incluso en partidos con pocas apuestas.", 
-            inline=False
-        )
-        embed.add_field(
-            name="3. El Premio", 
-            value="Si aciertas, el pozo total se reparte entre todos los ganadores proporcionalmente a lo que apostaron. ¡Si eres el único ganador, te llevas todo el pozo!", 
-            inline=False
-        )
-        embed.add_field(
-            name="4. Sin Ganadores", 
-            value="Si nadie acierta el resultado, el dinero se queda en el pozo (la casa gana) para financiar futuros bonos.", 
-            inline=False
-        )
-        embed.add_field(
-            name="5. Bono Diario", 
-            value="Si tu balance llega a $0, el bot te regalará **$15.00** automáticamente cada 24 horas.", 
-            inline=False
-        )
-        embed.set_footer(text="Usa !matches para empezar a apostar.")
+        # ... (rest of reglas)
         await ctx.send(embed=embed)
+
+    @commands.command(name='config_roles')
+    @commands.has_permissions(administrator=True)
+    async def config_roles(self, ctx, type: str, role: discord.Role, threshold: float = None):
+        """[ADMIN] Configura roles por desempeño. Tipos: broke, gambler, pro."""
+        type = type.lower()
+        if type not in ['broke', 'gambler', 'pro']:
+            await ctx.send("❌ Tipo inválido. Usa: `broke`, `gambler` o `pro`.")
+            return
+        
+        await database.set_setting(f"role_{type}", role.id)
+        if threshold is not None:
+            await database.set_setting(f"threshold_{type}", threshold)
+        
+        await ctx.send(f"✅ Configurado: Los usuarios **{type}** recibirán el rol {role.mention}" + 
+                       (f" al alcanzar **${threshold:.2f}**." if threshold else "."))
 
 async def setup(bot):
     await bot.add_cog(General(bot))

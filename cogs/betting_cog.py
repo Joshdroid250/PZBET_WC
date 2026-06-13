@@ -563,51 +563,7 @@ class Betting(commands.Cog):
                         # 1. Resolver apuestas individuales
                         payouts = await betting.resolve_match_bets(match_id, winner)
                         
-                        # 2. Actualizar legs de parlays
-                        for p_id in parlay_ids:
-                            legs = await database.get_parlay_legs(p_id)
-                            for leg_m_id, pred, leg_status in legs:
-                                if leg_m_id == match_id and leg_status == 'PENDING':
-                                    new_status = 'WON' if pred == winner else 'LOST'
-                                    await database.update_parlay_leg_status(p_id, match_id, new_status)
-                                    
-                    # Verificar si el parlay se resolvió completamente
-                    all_legs = await database.get_parlay_legs(p_id)
-                    parlay_status = "PENDING"
-                    if any(l[2] == 'LOST' for l in all_legs):
-                        parlay_status = "LOST"
-                        await database.resolve_parlay(p_id, 0.0, False)
-                    elif all(l[2] == 'WON' for l in all_legs):
-                        parlay_status = "WON"
-                        async with database.aiosqlite.connect(database.DB_PATH) as db:
-                            async with db.execute('SELECT amount, user_id FROM parlays WHERE parlay_id = ?', (p_id,)) as cursor:
-                                row = await cursor.fetchone()
-                                amt, p_user_id = row
-                        payout = amt * (2 ** len(all_legs))
-                        await database.resolve_parlay(p_id, payout, True)
-
-                    # NOTIFICACIÓN DE PARLAY COMPLETADO
-                    if parlay_status != "PENDING":
-                        channel_id = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
-                        if channel_id:
-                            channel = self.bot.get_channel(int(channel_id))
-                            if not channel:
-                                try: channel = await self.bot.fetch_channel(int(channel_id))
-                                except: channel = None
-                            
-                            if channel:
-                                user = self.bot.get_user(p_user_id)
-                                name = user.mention if user else f"Usuario {p_user_id}"
-                                if parlay_status == "WON":
-                                    embed_p = discord.Embed(title="🚀 ¡PARLAY GANADO!", color=discord.Color.gold())
-                                    embed_p.description = f"🔥 {name} ha acertado todas sus combinaciones y se lleva **${payout:.2f}**!"
-                                else:
-                                    embed_p = discord.Embed(title="❌ Parlay Perdido", color=discord.Color.red())
-                                    embed_p.description = f"Lo siento {name}, una de las patas del parlay ha fallado."
-                                
-                                await channel.send(embed=embed_p)
-
-                        # Enviar notificación (código existente de anuncio...)
+                        # 2. Enviar ANUNCIO del partido (Primero los resultados del partido)
                         channel_id = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
                         if channel_id:
                             channel = self.bot.get_channel(int(channel_id))
@@ -617,8 +573,22 @@ class Betting(commands.Cog):
                                 emoji_home = api_football.get_flag_emoji(home_name)
                                 emoji_away = api_football.get_flag_emoji(away_name)
                                 winner_name = home_name if winner == 'HOME_TEAM' else away_name if winner == 'AWAY_TEAM' else "Empate"
-                                embed = discord.Embed(title=f"🏁 Resultado: {emoji_home} {home_name} {score_home} - {score_away} {away_name} {emoji_away}", description=f"Ganador: **{winner_name}**", color=discord.Color.gold())
+                                embed = discord.Embed(title=f"🏁 Resultado: {emoji_home} {home_name} {score_home} - {score_away} {away_name} {emoji_away}", description=f"El ganador fue: **{winner_name}**", color=discord.Color.gold())
+                                
+                                winners_list = []
+                                for p in payouts:
+                                    user = self.bot.get_user(p['user_id'])
+                                    name = user.mention if user else f"Usuario {p['user_id']}"
+                                    if p['won']: winners_list.append(f"✅ {name}: +${p['payout']:.2f}")
+                                    else: winners_list.append(f"❌ {name}: -${p['amount_bet']:.2f}")
+                                
+                                if winners_list:
+                                    embed.add_field(name="Resumen de Apuestas", value="\n".join(winners_list), inline=False)
+                                
                                 await channel.send(embed=embed)
+                        
+                        # 3. Resolver y Anunciar Parlays (Después de los resultados del partido)
+                        await betting.resolve_parlays_for_match(self.bot, match_id, winner)
                         
                         await database.add_or_update_match(match_id, home_name, away_name, status, winner)
             
@@ -668,7 +638,11 @@ class Betting(commands.Cog):
                 summary = []
                 for p in payouts:
                     user = self.bot.get_user(p['user_id'])
-                    name = user.mention if user else f"ID:{p['user_id']}"
+                    if not user:
+                        try: user = await self.bot.fetch_user(p['user_id'])
+                        except: user = None
+                    
+                    name = user.mention if user else f"Usuario {p['user_id']}"
                     res = "✅" if p['won'] else "❌"
                     summary.append(f"{res} {name}: ${p['payout']:.2f}")
                 
