@@ -26,7 +26,7 @@ class General(commands.Cog):
     async def before_daily_bonus(self):
         await self.bot.wait_until_ready()
 
-    @commands.command(name='join')
+    @commands.hybrid_command(name='join')
     async def join(self, ctx):
         """Regístrate en el bot y recibe 100 monedas de regalo."""
         user_id = ctx.author.id
@@ -45,10 +45,10 @@ class General(commands.Cog):
                 description=f"Hola {ctx.author.mention}, te hemos asignado **$100.00** monedas fakes para que empieces a apostar en el Mundial.",
                 color=discord.Color.green()
             )
-            embed.set_footer(text="Usa !matches para ver los partidos disponibles.")
+            embed.set_footer(text="Usa /matches para ver los partidos disponibles.")
             await ctx.send(embed=embed)
 
-    @commands.command(name='balance')
+    @commands.hybrid_command(name='balance')
     async def balance(self, ctx):
         """Consulta tu saldo actual."""
         user_id = ctx.author.id
@@ -63,12 +63,12 @@ class General(commands.Cog):
         else:
             embed = discord.Embed(
                 title="No registrado",
-                description="No tienes una cuenta aún. Usa `!join` para empezar.",
+                description="No tienes una cuenta aún. Usa `/join` para empezar.",
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
 
-    @commands.command(name='marcador')
+    @commands.hybrid_command(name='marcador')
     async def marcador(self, ctx):
         """Muestra los resultados actuales de los partidos en vivo."""
         import api_football
@@ -105,24 +105,24 @@ class General(commands.Cog):
         
         await ctx.send(embed=embed)
 
-    @commands.command(name='ayuda')
+    @commands.hybrid_command(name='ayuda')
     async def ayuda(self, ctx):
         """Muestra la lista completa de comandos."""
         embed = discord.Embed(
             title="📖 Guía de Comandos - BetBot",
-            description="Usa los comandos de abajo para interactuar con el bot. Para entender cómo funcionan las apuestas, usa `!reglas`.",
+            description="Usa los comandos de barra `/` para ver sugerencias automáticas. Para entender cómo funcionan las apuestas, usa `/reglas`.",
             color=discord.Color.purple()
         )
-        embed.add_field(name="👤 Usuario", value="`!join`: Regístrate.\n`!balance`: Mira tu dinero.\n`!historial`: Tus apuestas.\n`!historial_all`: Historial de todos.\n`!top`: Mira el ranking de usuarios.", inline=False)
-        embed.add_field(name="⚽ Apuestas", value="`!matches`: Próximos partidos.\n`!apuestas`: Tus apuestas activas.\n`!parlay`: Crea una apuesta combinada.\n`!mis_parlays`: Mira tus parlays activos.\n`!cashout`: Retira apuestas (80% reembolso).\n`!vivo`: Mira los partidos en vivo.\n`!reglas`: Sistema de pozo y premios.", inline=False)
+        embed.add_field(name="👤 Usuario", value="`/join`: Regístrate.\n`/balance`: Mira tu dinero.\n`/historial`: Tus apuestas.\n`/historial_all`: Historial de todos.\n`/top`: Mira el ranking de usuarios.", inline=False)
+        embed.add_field(name="⚽ Apuestas", value="`/matches`: Próximos partidos.\n`/apuestas`: Tus apuestas activas.\n`/parlay`: Crea una apuesta combinada.\n`/mis_parlays`: Mira tus parlays activos.\n`/cashout`: Retira apuestas.\n`/vivo`: Mira los partidos en vivo.\n`/marcador`: Resultados en vivo (goles).\n`/reglas`: Sistema de pozo y premios.", inline=False)
         
         if ctx.author.guild_permissions.administrator:
-            embed.add_field(name="⚙️ Administración", value="`!config_roles`: Configura roles y umbrales.\n`!debug_resolve`: Fuerza resolución de partidos.", inline=False)
+            embed.add_field(name="⚙️ Administración", value="`/config_roles`: Configura roles y umbrales.\n`/debug_resolve`: Fuerza resolución de partidos.", inline=False)
             
         embed.set_footer(text="¡Buena suerte en tus apuestas!")
         await ctx.send(embed=embed)
 
-    @commands.command(name='top')
+    @commands.hybrid_command(name='top')
     async def top(self, ctx):
         """Muestra el ranking de los 10 usuarios más ricos."""
         top_users = await database.get_top_users(10)
@@ -152,7 +152,7 @@ class General(commands.Cog):
         embed.add_field(name="Top 10", value=leaderboard, inline=False)
         await ctx.send(embed=embed)
 
-    @commands.command(name='reglas')
+    @commands.hybrid_command(name='reglas')
     async def reglas(self, ctx):
         """Explica el funcionamiento detallado de las apuestas."""
         embed = discord.Embed(
@@ -185,10 +185,10 @@ class General(commands.Cog):
             value="Si tu balance llega a $0, el bot te regalará **$15.00** automáticamente cada 24 horas.", 
             inline=False
         )
-        embed.set_footer(text="Usa !matches para empezar a apostar.")
+        embed.set_footer(text="Usa /matches para empezar a apostar.")
         await ctx.send(embed=embed)
 
-    @commands.command(name='config_roles')
+    @commands.hybrid_command(name='config_roles')
     @commands.has_permissions(administrator=True)
     async def config_roles(self, ctx, type: str, role: discord.Role, threshold: float = None):
         """[ADMIN] Configura roles por desempeño. Tipos: broke, gambler, pro."""
@@ -209,7 +209,7 @@ class General(commands.Cog):
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("❌ Solo los administradores pueden usar este comando.")
         elif isinstance(error, commands.BadArgument):
-            await ctx.send("❌ Error en los argumentos. Uso: `!config_roles <tipo> <@rol> [monto]`\nEjemplo: `!config_roles gambler @Apostador 500`.")
+            await ctx.send("❌ Error en los argumentos. Uso: `/config_roles <tipo> <@rol> [monto]`\nEjemplo: `/config_roles gambler @Apostador 500`.")
         else:
             await ctx.send(f"❌ Error al ejecutar el comando: {error}")
 

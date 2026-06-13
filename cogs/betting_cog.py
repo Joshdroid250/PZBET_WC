@@ -35,7 +35,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
 
         balance = await database.get_user_balance(user_id)
         if balance is None:
-            await interaction.response.send_message("❌ No estás registrado. Usa `!join` primero.", ephemeral=True)
+            await interaction.response.send_message("❌ No estás registrado. Usa `/join` primero.", ephemeral=True)
             return
 
         if balance < amount_val:
@@ -48,7 +48,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             await interaction.response.send_message("❌ Este partido ya ha finalizado.", ephemeral=True)
             return
 
-        # Registrar el partido en la DB para que aparezca en !apuestas (JOIN)
+        # Registrar el partido en la DB
         await database.add_or_update_match(
             self.match_id, 
             match_info['homeTeam']['name'], 
@@ -59,15 +59,13 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         # Registrar apuesta
         await database.place_bet(user_id, self.match_id, amount_val, self.prediction)
         
-        # Obtener estadísticas del pozo
         total_bets, pools = await database.get_match_pools(self.match_id)
         house_injection = betting.HOUSE_INJECTION
         total_pool = total_bets + house_injection
         
-        # Calcular multiplicador actual para esta predicción
         pred_pool = pools.get(self.prediction, 0)
         multiplier = total_pool / pred_pool if pred_pool > 0 else 1.0
-        if multiplier > 10.0: multiplier = 10.0 # Cap de seguridad
+        if multiplier > 10.0: multiplier = 10.0
         bar = betting.get_multiplier_bar(multiplier)
 
         home_team = match_info['homeTeam']['name']
@@ -80,7 +78,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         embed.add_field(name="Partido", value=f"{home_emoji} **{home_team}** vs **{away_team}** {away_emoji}", inline=False)
         embed.add_field(name="Tu Predicción", value=f"**{self.team_name}**", inline=True)
         embed.add_field(name="Monto", value=f"**${amount_val:.2f}**", inline=True)
-        embed.add_field(name="📊 Estadísticas del Partido", value=f"**Volumen Total:** ${total_pool:.2f}\n**Multiplicador Estimado:** x{multiplier:.2f}\n{bar}", inline=False)
+        embed.add_field(name="📊 Estadísticas", value=f"**Volumen:** ${total_pool:.2f}\n**Multiplicador:** x{multiplier:.2f}\n{bar}", inline=False)
         
         flag_home = api_football.get_flag_url(home_team)
         if flag_home:
@@ -171,11 +169,8 @@ class ParlayMatchSelect(discord.ui.Select):
         btn_away = discord.ui.Button(label=f"Ganador: {away}", style=discord.ButtonStyle.danger)
 
         async def add_leg(inter, pred):
-            # Check if match already in selected_legs
             self.view.selected_legs = [l for l in self.view.selected_legs if l[0] != match_id]
             self.view.selected_legs.append((match_id, pred, home, away))
-            
-            # Update original message
             legs_text = "\n".join([f"✅ {l[2]} vs {l[3]} (**{l[1]}**)" for l in self.view.selected_legs])
             embed = discord.Embed(title="🏗️ Construyendo Parlay", description=f"Selecciones actuales:\n{legs_text}", color=discord.Color.blue())
             await inter.response.edit_message(embed=embed, view=self.view)
@@ -219,10 +214,7 @@ class MatchSelect(discord.ui.Select):
         if flag:
             embed.set_thumbnail(url=flag)
         
-        # Nueva vista para el partido seleccionado
         view = discord.ui.View(timeout=None)
-        
-        # Botones de apuesta
         btn_home = discord.ui.Button(label=home, style=discord.ButtonStyle.primary)
         btn_draw = discord.ui.Button(label="Empate", style=discord.ButtonStyle.secondary)
         btn_away = discord.ui.Button(label=away, style=discord.ButtonStyle.danger)
@@ -237,7 +229,7 @@ class MatchSelect(discord.ui.Select):
         
         async def back_callback(inter):
             await inter.response.edit_message(content="Cargando lista...", embed=None, view=None)
-            await inter.edit_original_response(content="Usa `!matches` para volver a la lista completa.")
+            await inter.edit_original_response(content="Usa `/matches` para volver a la lista completa.")
 
         btn_back.callback = back_callback
 
@@ -270,36 +262,25 @@ class CashoutSelect(discord.ui.Select):
                     description=f"Monto: ${p['amount']:.2f} | {len(p['legs'])} partidos",
                     value=f"par_{p['id']}_{p['amount']}"
                 ))
-        
         super().__init__(placeholder="Elige la apuesta para cobrar (80% reembolso)...", options=options)
-        self.is_parlay = is_parlay
 
     async def callback(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         val_parts = self.values[0].split('_')
-        prefix = val_parts[0]
-        bet_id = int(val_parts[1])
-        amount = float(val_parts[2])
-        
-        penalty = 0.20
-        return_amount = amount * (1 - penalty)
+        prefix, bet_id, amount = val_parts[0], int(val_parts[1]), float(val_parts[2])
+        return_amount = amount * 0.8
         
         if prefix == 'ind':
-            # Verificar si el partido no ha terminado
-            match_info = api_football.get_match_details(bet_id)
+            match_info = await api_football.get_match_details(bet_id)
             if match_info and match_info['status'] == 'FINISHED':
-                await interaction.response.send_message("❌ El partido ya terminó, no puedes hacer cashout.", ephemeral=True)
+                await interaction.response.send_message("❌ El partido ya terminó.", ephemeral=True)
                 return
             await database.remove_bet(user_id, bet_id)
         else:
-            # Parlay
             await database.remove_parlay(user_id, bet_id)
 
         await database.update_balance(user_id, return_amount)
-        
-        embed = discord.Embed(title="💰 Cashout Exitoso", color=discord.Color.gold())
-        embed.description = f"Has recuperado **${return_amount:.2f}** (80% del original)."
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=discord.Embed(title="💰 Cashout Exitoso", description=f"Has recuperado **${return_amount:.2f}**.", color=discord.Color.gold()))
 
 class CashoutView(discord.ui.View):
     def __init__(self, user_id):
@@ -310,389 +291,237 @@ class CashoutView(discord.ui.View):
     async def individual(self, interaction: discord.Interaction, button: discord.ui.Button):
         bets = await database.get_user_active_bets(self.user_id)
         if not bets:
-            await interaction.response.send_message("No tienes apuestas individuales activas.", ephemeral=True)
+            await interaction.response.send_message("Sin apuestas activas.", ephemeral=True)
             return
-        
         view = discord.ui.View()
-        view.add_item(CashoutSelect(bets, is_parlay=False))
-        await interaction.response.edit_message(content="Selecciona la apuesta individual:", view=view)
+        view.add_item(CashoutSelect(bets, False))
+        await interaction.response.edit_message(content="Elige la apuesta:", view=view)
 
     @discord.ui.button(label="Parlays (Combinadas)", style=discord.ButtonStyle.secondary)
     async def parlay(self, interaction: discord.Interaction, button: discord.ui.Button):
         parlays = await database.get_user_active_parlays(self.user_id)
         if not parlays:
-            await interaction.response.send_message("No tienes parlays activos.", ephemeral=True)
+            await interaction.response.send_message("Sin parlays activos.", ephemeral=True)
             return
-        
         view = discord.ui.View()
-        view.add_item(CashoutSelect(parlays, is_parlay=True))
-        await interaction.response.edit_message(content="Selecciona el parlay:", view=view)
+        view.add_item(CashoutSelect(parlays, True))
+        await interaction.response.edit_message(content="Elige el parlay:", view=view)
 
 class Betting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self._last_check_time = 0 # Inicializar para forzar la primera corrida
+        self._last_check_time = 0
         self.check_matches.start()
 
     def cog_unload(self):
         self.check_matches.cancel()
 
-    @commands.command(name='matches')
+    @commands.hybrid_command(name='matches')
     async def matches(self, ctx):
-        """Lista los partidos en un menú desplegable para evitar spam."""
-        competition = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = await api_football.get_upcoming_matches(competition)
-        
-        if not upcoming:
-            await ctx.send("No hay partidos programados próximamente.")
-            return
-
-        embed = discord.Embed(
-            title="⚽ Selección de Partidos",
-            description="Elige un partido del menú de abajo para ver detalles y apostar.",
-            color=discord.Color.blue()
-        )
-        
-        view = BettingView(upcoming[:25]) # Límite de 25 para el Select de Discord
-        await ctx.send(embed=embed, view=view)
-
-    @commands.command(name='apuestas')
-    async def apuestas(self, ctx):
-        """Muestra tus apuestas activas que aún no se han resuelto."""
-        user_id = ctx.author.id
-        user_bets = await database.get_user_active_bets(user_id)
-        
-        if not user_bets:
-            embed = discord.Embed(title="🚫 Sin Apuestas", description="No tienes apuestas activas en este momento.", color=discord.Color.light_grey())
-            await ctx.send(embed=embed)
-            return
-
-        embed = discord.Embed(title="📝 Tus Apuestas Activas", color=discord.Color.blue())
-        for home, away, amount, pred, m_id in user_bets:
-            # Calcular estadísticas en vivo
-            total_bets, pools = await database.get_match_pools(m_id)
-            house_injection = betting.HOUSE_INJECTION
-            total_pool = total_bets + house_injection
-            
-            pred_pool = pools.get(pred, 0)
-            multiplier = total_pool / pred_pool if pred_pool > 0 else 1.0
-            if multiplier > 10.0: multiplier = 10.0
-            
-            # Mapear predicción a nombre real
-            pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-            
-            embed.add_field(
-                name=f"{home} vs {away}",
-                value=(
-                    f"**Monto:** ${amount:.2f}\n"
-                    f"**Predicción:** {pred_name}\n"
-                    f"**Multiplicador en vivo:** x{multiplier:.2f}\n"
-                    f"**Pozo Total:** ${total_pool:.2f}\n"
-                    f"**ID:** {m_id}"
-                ),
-                inline=False
-            )
-        
-        if user_bets:
-            flag = api_football.get_flag_url(user_bets[0][0])
-            if flag:
-                embed.set_thumbnail(url=flag)
-
-        embed.set_footer(text="Las apuestas se resuelven automáticamente al terminar el partido.")
-        await ctx.send(embed=embed)
-
-    @commands.command(name='historial')
-    async def historial(self, ctx):
-        """Muestra tus últimas 10 apuestas resueltas."""
-        user_id = ctx.author.id
-        try:
-            history = await database.get_user_history(user_id)
-            if not history:
-                embed = discord.Embed(title="📜 Historial Vacío", description="Aún no tienes completada ninguna apuesta.", color=discord.Color.light_grey())
-                await ctx.send(embed=embed)
-                return
-
-            embed = discord.Embed(title="📜 Tu Historial de Apuestas", color=discord.Color.blue())
-            for home, away, amount, pred, payout, won, winner in history:
-                status = "✅ GANADA" if won else "❌ PERDIDA"
-                pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-                res_text = f"Resultado: {winner.replace('_', ' ')}" if winner else "Resultado: N/A"
-                
-                embed.add_field(
-                    name=f"{home} vs {away}",
-                    value=f"**Estado:** {status}\n**Apostado:** ${amount:.2f} | **Recibido:** ${payout:.2f}\n**Tu Predicción:** {pred_name}\n*{res_text}*",
-                    inline=False
-                )
-            await ctx.send(embed=embed)
-        except Exception as e:
-            await ctx.send("❌ Ocurrió un error al cargar tu historial.")
-
-    @commands.command(name='historial_all')
-    async def historial_all(self, ctx):
-        """Muestra las últimas 15 apuestas resueltas de todos los usuarios."""
-        try:
-            history = await database.get_global_history(15)
-            if not history:
-                embed = discord.Embed(title="📜 Historial Global Vacío", description="Nadie ha completado ninguna apuesta todavía.", color=discord.Color.light_grey())
-                await ctx.send(embed=embed)
-                return
-
-            embed = discord.Embed(title="🌍 Historial Global de Apuestas", description="Últimas apuestas resueltas en el servidor.", color=discord.Color.dark_blue())
-            for u_id, home, away, amount, pred, payout, won, winner in history:
-                status = "✅ GANADA" if won else "❌ PERDIDA"
-                user = self.bot.get_user(u_id)
-                if not user:
-                    try: user = await self.bot.fetch_user(u_id)
-                    except: user = None
-                
-                user_name = user.name if user else f"ID:{u_id}"
-                pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-                
-                embed.add_field(
-                    name=f"👤 {user_name} | {home} vs {away}",
-                    value=f"**Resultado:** {status}\n**Predicción:** {pred_name} | **Ganancia:** ${payout:.2f}",
-                    inline=False
-                )
-            await ctx.send(embed=embed)
-        except Exception as e:
-            print(f"Error en historial_all: {e}")
-            await ctx.send("❌ Error al cargar el historial global.")
-
-    @commands.command(name='cashout')
-    async def cashout(self, ctx, match_id: int):
-        """Retira tu apuesta antes de que termine el partido (con una penalización del 20%)."""
-        user_id = ctx.author.id
-        amount = await database.get_bet_amount(user_id, match_id)
-        
-        if amount is None:
-            await ctx.send("No tienes ninguna apuesta activa en este partido.")
-            return
-
-        match_info = api_football.get_match_details(match_id)
-        if match_info and match_info['status'] == 'FINISHED':
-            await ctx.send("El partido ya ha terminado. No puedes hacer cashout.")
-            return
-
-        penalty = 0.20
-        return_amount = amount * (1 - penalty)
-        await database.remove_bet(user_id, match_id)
-        await database.update_balance(user_id, return_amount)
-        
-        embed = discord.Embed(title="💰 Cashout Exitoso", color=discord.Color.gold())
-        embed.description = f"Has recuperado **${return_amount:.2f}**."
-        await ctx.send(embed=embed)
-
-    @commands.command(name='vivo')
-    async def vivo(self, ctx):
-        """Muestra los partidos en vivo."""
-        competition = os.getenv('COMPETITION_CODE', 'PL')
-        url = f"{api_football.BASE_URL}/competitions/{competition}/matches?status=LIVE"
-        data = await api_football.fetch_json(url)
-        
-        matches = data.get('matches', []) if data else []
-        
-        if not matches:
-            await ctx.send("No hay partidos jugándose en este momento.")
-            return
-
-        embed = discord.Embed(title="🏟️ Partidos en Vivo", description="Selecciona un partido para apostar.", color=discord.Color.red())
-        view = BettingView(matches[:25])
-        await ctx.send(embed=embed, view=view)
-
-    @commands.command(name='parlay')
-    async def parlay(self, ctx):
-        """Inicia el constructor de parlays."""
-        competition = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = api_football.get_upcoming_matches(competition)
-        
+        """Lista los partidos próximos."""
+        comp = os.getenv('COMPETITION_CODE', 'PL')
+        upcoming = await api_football.get_upcoming_matches(comp)
         if not upcoming:
             await ctx.send("No hay partidos programados.")
             return
+        embed = discord.Embed(title="⚽ Selección de Partidos", color=discord.Color.blue())
+        await ctx.send(embed=embed, view=BettingView(upcoming[:25]))
 
-        embed = discord.Embed(title="🏗️ Constructor de Parlays", description="Selecciona al menos 2 partidos.", color=discord.Color.blue())
-        view = ParlayBuilderView(upcoming, ctx.author.id)
-        await ctx.send(embed=embed, view=view)
-
-    @commands.command(name='mis_parlays')
-    async def mis_parlays(self, ctx):
-        """Muestra tus parlays activos."""
+    @commands.hybrid_command(name='apuestas')
+    async def apuestas(self, ctx):
+        """Mira tus apuestas activas."""
         user_id = ctx.author.id
-        parlays = await database.get_user_active_parlays(user_id)
-        if not parlays:
-            await ctx.send("No tienes parlays activos.")
+        user_bets = await database.get_user_active_bets(user_id)
+        if not user_bets:
+            await ctx.send("No tienes apuestas activas.")
             return
+        embed = discord.Embed(title="📝 Tus Apuestas Activas", color=discord.Color.blue())
+        for home, away, amount, pred, m_id in user_bets:
+            total_bets, pools = await database.get_match_pools(m_id)
+            total_pool = total_bets + betting.HOUSE_INJECTION
+            pred_pool = pools.get(pred, 0)
+            multiplier = min(10.0, total_pool / pred_pool if pred_pool > 0 else 1.0)
+            pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            embed.add_field(name=f"{home} vs {away}", value=f"**Monto:** ${amount:.2f}\n**Predicción:** {pred_name}\n**Cuota:** x{multiplier:.2f}", inline=False)
+        await ctx.send(embed=embed)
 
-        embed = discord.Embed(title="🚀 Tus Parlays Activos", color=discord.Color.gold())
+    @commands.hybrid_command(name='historial')
+    async def historial(self, ctx):
+        """Mira tus apuestas pasadas."""
+        history = await database.get_user_history(ctx.author.id)
+        if not history:
+            await ctx.send("Historial vacío.")
+            return
+        embed = discord.Embed(title="📜 Tu Historial", color=discord.Color.blue())
+        for home, away, amount, pred, payout, won, winner in history:
+            status = "✅ GANADA" if won else "❌ PERDIDA"
+            pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            embed.add_field(name=f"{home} vs {away}", value=f"{status} | Apostado: ${amount:.2f} | Ganado: ${payout:.2f}\nPred: {pred_name}", inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name='historial_all')
+    async def historial_all(self, ctx):
+        """Historial de todos los usuarios."""
+        history = await database.get_global_history(15)
+        if not history:
+            await ctx.send("Sin historial global.")
+            return
+        embed = discord.Embed(title="🌍 Historial Global", color=discord.Color.dark_blue())
+        for u_id, home, away, amount, pred, payout, won, winner in history:
+            user = self.bot.get_user(u_id) or await self.bot.fetch_user(u_id)
+            name = user.name if user else f"ID:{u_id}"
+            embed.add_field(name=f"👤 {name} | {home} vs {away}", value=f"Ganancia: ${payout:.2f}", inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name='cashout')
+    async def cashout(self, ctx):
+        """Retira una apuesta activa."""
+        await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id))
+
+    @commands.hybrid_command(name='vivo')
+    async def vivo(self, ctx):
+        """Mira partidos en juego."""
+        comp = os.getenv('COMPETITION_CODE', 'PL')
+        url = f"{api_football.BASE_URL}/competitions/{comp}/matches?status=LIVE"
+        data = await api_football.fetch_json(url)
+        matches = data.get('matches', []) if data else []
+        if not matches:
+            await ctx.send("Sin partidos en vivo.")
+            return
+        await ctx.send(embed=discord.Embed(title="🏟️ En Vivo", color=discord.Color.red()), view=BettingView(matches[:25]))
+
+    @commands.hybrid_command(name='parlay')
+    async def parlay(self, ctx):
+        """Crea un parlay (combinada)."""
+        comp = os.getenv('COMPETITION_CODE', 'PL')
+        upcoming = await api_football.get_upcoming_matches(comp)
+        if not upcoming:
+            await ctx.send("Sin partidos para parlay.")
+            return
+        await ctx.send(embed=discord.Embed(title="🏗️ Constructor de Parlays"), view=ParlayBuilderView(upcoming, ctx.author.id))
+
+    @commands.hybrid_command(name='mis_parlays')
+    async def mis_parlays(self, ctx):
+        """Tus parlays activos."""
+        parlays = await database.get_user_active_parlays(ctx.author.id)
+        if not parlays:
+            await ctx.send("Sin parlays activos.")
+            return
+        embed = discord.Embed(title="🚀 Tus Parlays", color=discord.Color.gold())
         for p in parlays:
-            legs_text = ""
-            for home, away, pred, status in p['legs']:
-                emoji = "⏳" if status == 'PENDING' else "✅" if status == 'WON' else "❌"
-                pred_text = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-                legs_text += f"{emoji} **{home} vs {away}**: {pred_text}\n"
-            
-            embed.add_field(name=f"Parlay ID: {p['id']} - Monto: ${p['amount']:.2f}", value=legs_text, inline=False)
+            text = "\n".join([f"{'✅' if s=='WON' else '❌' if s=='LOST' else '⏳'} {h} vs {a}" for h,a,pr,s in p['legs']])
+            embed.add_field(name=f"ID: {p['id']} (${p['amount']:.2f})", value=text, inline=False)
         await ctx.send(embed=embed)
 
     @tasks.loop(minutes=1)
     async def check_matches(self):
-        """Tarea en segundo plano optimizada."""
-        print("🔍 [DEBUG] Iniciando ciclo de revisión de partidos...")
+        print("🔍 [DEBUG] Revisando partidos...")
         try:
-            current_time = asyncio.get_event_loop().time()
             now_utc = datetime.now(timezone.utc)
-            
-            if not hasattr(self, '_last_check_time'):
-                self._last_check_time = 0
-            
-            active_match_ids = await database.get_all_active_match_ids()
-            
-            # También considerar partidos de parlays activos
+            active_ids = await database.get_all_active_match_ids()
             parlay_ids = await database.get_active_parlay_ids()
             for p_id in parlay_ids:
-                legs = await database.get_parlay_legs(p_id)
-                for m_id, _, status in legs:
-                    if status == 'PENDING' and m_id not in active_match_ids:
-                        active_match_ids.append(m_id)
-
-            if not active_match_ids:
-                if current_time - self._last_check_time < 1800: return
-                self._last_check_time = current_time
-                return
-
-            is_any_match_running = False
-            earliest_start = None
-            matches_to_check = []
-
-            for m_id in active_match_ids:
+                for m_id, _, s in await database.get_parlay_legs(p_id):
+                    if s == 'PENDING' and m_id not in active_ids: active_ids.append(m_id)
+            
+            if not active_ids: return
+            
+            is_live, earliest = False, None
+            matches = []
+            for m_id in active_ids:
                 match = await api_football.get_match_details(m_id)
                 if not match: continue
-                matches_to_check.append(match)
-                
-                status = match['status']
-                home = match['homeTeam']['name']
-                away = match['awayTeam']['name']
-                
-                print(f"📌 [LOG] Partido {m_id}: {home} vs {away} | Estado: {status}")
-                
-                if status in ['IN_PLAY', 'PAUSED', 'LIVE']:
-                    is_any_match_running = True
-                
-                start_str = match['utcDate'].replace('Z', '+00:00')
-                start_dt = datetime.fromisoformat(start_str)
-                if earliest_start is None or start_dt < earliest_start:
-                    earliest_start = start_dt
+                matches.append(match)
+                if match['status'] in ['IN_PLAY', 'PAUSED', 'LIVE']: is_live = True
+                dt = datetime.fromisoformat(match['utcDate'].replace('Z', '+00:00'))
+                if earliest is None or dt < earliest: earliest = dt
 
-            interval = 300
-            if is_any_match_running: interval = 60
-            elif earliest_start:
-                time_until_start = (earliest_start - now_utc).total_seconds()
-                if time_until_start > 600: interval = 600
-                else: interval = 60
-            
-            if current_time - self._last_check_time < interval: return
-            self._last_check_time = current_time
+            if not is_live and earliest and (earliest - now_utc).total_seconds() > 600: return
 
-            for match in matches_to_check:
-                match_id = match['id']
-                status = match['status']
-                home_name = match['homeTeam']['name']
-                away_name = match['awayTeam']['name']
+            for match in matches:
+                m_id, status = match['id'], match['status']
+                home, away = match['homeTeam']['name'], match['awayTeam']['name']
+                print(f"📌 [LOG] {home} vs {away} | Estado: {status}")
                 
+                channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
+                if channel_id_env and status in ['IN_PLAY', 'PAUSED', 'LIVE']:
+                    try:
+                        channel_id = int(str(channel_id_env).strip().strip('"').strip("'"))
+                        channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+
+                        if channel:
+                            score = f"{match['score']['fullTime']['home']}-{match['score']['fullTime']['away']}"
+                            emoji_h = api_football.get_flag_emoji(home)
+                            emoji_a = api_football.get_flag_emoji(away)
+                            
+                            live_info = await database.get_live_msg_info(m_id)
+                            msg_id = live_info[0] if live_info else None
+                            last_score = live_info[1] if live_info else None
+                            
+                            embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {home} vs {away} {emoji_a}", description=f"Marcador Actual: **{score}**", color=discord.Color.red())
+                            
+                            if msg_id:
+                                try:
+                                    msg = await channel.fetch_message(msg_id)
+                                    # Si el mensaje existe, solo editamos si el marcador cambió
+                                    if score != last_score:
+                                        await msg.edit(embed=embed_live)
+                                        await database.update_live_msg_info(m_id, msg_id, score)
+                                        print(f"📝 [MSG] Marcador editado: {home} vs {away}")
+                                except discord.NotFound:
+                                    # Si el mensaje fue borrado, enviamos uno nuevo
+                                    new_msg = await channel.send(embed=embed_live)
+                                    await database.update_live_msg_info(m_id, new_msg.id, score)
+                                    print(f"📣 [MSG] Marcador recreado (era inexistente): {home} vs {away}")
+                                except Exception as e:
+                                    print(f"⚠️ Error al intentar editar mensaje: {e}")
+                            else:
+                                # Primer mensaje para este partido
+                                new_msg = await channel.send(embed=embed_live)
+                                await database.update_live_msg_info(m_id, new_msg.id, score)
+                                print(f"📣 [MSG] Nuevo marcador enviado: {home} vs {away}")
+                    except Exception as e: print(f"⚠️ Error live msg: {e}")
+
                 if status == 'FINISHED':
+                    live_info = await database.get_live_msg_info(m_id)
+                    if live_info and live_info[0]:
+                        try:
+                            channel = self.bot.get_channel(int(channel_id_env)) or await self.bot.fetch_channel(int(channel_id_env))
+                            msg = await channel.fetch_message(live_info[0])
+                            await msg.delete()
+                            await database.update_live_msg_info(m_id, None, None)
+                            print(f"🗑️ [MSG] Marcador borrado: {home} vs {away}")
+                        except: pass
+                    
                     winner = match['score']['winner']
                     if winner:
-                        # 1. Resolver apuestas individuales
-                        payouts = await betting.resolve_match_bets(match_id, winner)
-                        
-                        # 2. Enviar ANUNCIO del partido (Primero los resultados del partido)
-                        channel_id = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
-                        if channel_id:
-                            channel = self.bot.get_channel(int(channel_id))
-                            if channel:
-                                score_home = match['score']['fullTime']['home']
-                                score_away = match['score']['fullTime']['away']
-                                emoji_home = api_football.get_flag_emoji(home_name)
-                                emoji_away = api_football.get_flag_emoji(away_name)
-                                winner_name = home_name if winner == 'HOME_TEAM' else away_name if winner == 'AWAY_TEAM' else "Empate"
-                                embed = discord.Embed(title=f"🏁 Resultado: {emoji_home} {home_name} {score_home} - {score_away} {away_name} {emoji_away}", description=f"El ganador fue: **{winner_name}**", color=discord.Color.gold())
-                                
-                                winners_list = []
-                                for p in payouts:
-                                    user = self.bot.get_user(p['user_id'])
-                                    name = user.mention if user else f"Usuario {p['user_id']}"
-                                    if p['won']: winners_list.append(f"✅ {name}: +${p['payout']:.2f}")
-                                    else: winners_list.append(f"❌ {name}: -${p['amount_bet']:.2f}")
-                                
-                                if winners_list:
-                                    embed.add_field(name="Resumen de Apuestas", value="\n".join(winners_list), inline=False)
-                                
-                                await channel.send(embed=embed)
-                        
-                        # 3. Resolver y Anunciar Parlays (Después de los resultados del partido)
-                        await betting.resolve_parlays_for_match(self.bot, match_id, winner)
-                        
-                        await database.add_or_update_match(match_id, home_name, away_name, status, winner)
-            
-        except Exception as e:
-            print(f"ERROR en check_matches: {e}")
+                        payouts = await betting.resolve_match_bets(m_id, winner)
+                        channel = self.bot.get_channel(int(channel_id_env)) or await self.bot.fetch_channel(int(channel_id_env))
+                        if channel:
+                            winner_name = home if winner == 'HOME_TEAM' else away if winner == 'AWAY_TEAM' else "Empate"
+                            embed_res = discord.Embed(title=f"🏁 Resultado: {home} vs {away}", description=f"Ganador: **{winner_name}**", color=discord.Color.gold())
+                            summary = []
+                            for p in payouts:
+                                user = self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])
+                                name = user.mention if user else f"ID:{p['user_id']}"
+                                summary.append(f"{'✅' if p['won'] else '❌'} {name}: ${p['payout']:.2f}")
+                            if summary: embed_res.add_field(name="Resumen", value="\n".join(summary))
+                            await channel.send(embed=embed_res)
+                            print(f"📢 [MSG] Anuncio enviado: {home} vs {away}")
+                        await betting.resolve_parlays_for_match(self.bot, m_id, winner)
+                        await database.add_or_update_match(m_id, home, away, status, winner)
+        except Exception as e: print(f"ERROR: {e}")
 
     @check_matches.before_loop
-    async def before_check_matches(self):
-        await self.bot.wait_until_ready()
+    async def before_check_matches(self): await self.bot.wait_until_ready()
 
-    @commands.command(name='debug_resolve')
+    @commands.hybrid_command(name='debug_resolve')
     @commands.has_permissions(administrator=True)
     async def debug_resolve(self, ctx, match_id: int, winner: str):
-        """[ADMIN] Fuerza resolución y envía anuncios."""
+        """[ADMIN] Fuerza resolución."""
         winner = winner.upper()
-        await ctx.send(f"⚙️ Procesando resolución manual para ID: {match_id} como {winner}...")
-        
-        # 1. Resolver apuestas individuales
-        payouts = await betting.resolve_match_bets(match_id, winner)
-        
-        # 2. Resolver parlays (Llamada a la función centralizada)
+        await betting.resolve_match_bets(match_id, winner)
         await betting.resolve_parlays_for_match(self.bot, match_id, winner)
+        await ctx.send(f"✅ Resuelto ID {match_id} como {winner}.")
 
-        # 3. Enviar ANUNCIO del partido (Independiente del Parlay)
-        match_info = api_football.get_match_details(match_id)
-        home_name = match_info['homeTeam']['name'] if match_info else "Equipo Local"
-        away_name = match_info['awayTeam']['name'] if match_info else "Equipo Visitante"
-        
-        channel_id = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
-        if channel_id:
-            channel = self.bot.get_channel(int(channel_id))
-            if not channel:
-                try: channel = await self.bot.fetch_channel(int(channel_id))
-                except: channel = None
-            
-            if channel:
-                emoji_home = api_football.get_flag_emoji(home_name)
-                emoji_away = api_football.get_flag_emoji(away_name)
-                winner_name = home_name if winner == 'HOME_TEAM' else away_name if winner == 'AWAY_TEAM' else "Empate"
-                
-                embed = discord.Embed(
-                    title=f"🏁 [DEBUG] Resultado: {emoji_home} {home_name} vs {away_name} {emoji_away}",
-                    description=f"El ganador fue: **{winner_name}**",
-                    color=discord.Color.gold()
-                )
-                
-                summary = []
-                for p in payouts:
-                    user = self.bot.get_user(p['user_id'])
-                    if not user:
-                        try: user = await self.bot.fetch_user(p['user_id'])
-                        except: user = None
-                    
-                    name = user.mention if user else f"Usuario {p['user_id']}"
-                    res = "✅" if p['won'] else "❌"
-                    summary.append(f"{res} {name}: ${p['payout']:.2f}")
-                
-                embed.add_field(name="Resumen de Cobros", value="\n".join(summary) if summary else "Sin apuestas individuales.", inline=False)
-                await channel.send(embed=embed)
-                await ctx.send("✅ Anuncio enviado al canal configurado.")
-        
-        await database.add_or_update_match(match_id, home_name, away_name, "FINISHED", winner)
-        await ctx.send("✅ Resolución forzada completada.")
-
-async def setup(bot):
-    await bot.add_cog(Betting(bot))
+async def setup(bot): await bot.add_cog(Betting(bot))

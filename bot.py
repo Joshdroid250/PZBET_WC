@@ -35,8 +35,20 @@ class BetBot(commands.Bot):
                 print(f"Error al cargar {extension}: {e}")
 
     async def on_ready(self):
-        print(f'Conectado como {self.user} (ID: {self.user.id})')
+        await self.wait_until_ready()
+        print(f'Conectado como {self.user.name} (ID: {self.user.id})')
         print('------')
+
+    @commands.command(name='sync')
+    @commands.is_owner()
+    async def sync(self, ctx):
+        """[OWNER] Sincroniza los comandos de barra manualmente."""
+        await ctx.send("⏳ Sincronizando comandos de barra diagonal...")
+        try:
+            synced = await self.tree.sync()
+            await ctx.send(f"✅ Sincronizados {len(synced)} comandos globalmente. (Puede tardar unos minutos en aparecer en todos los servidores).")
+        except Exception as e:
+            await ctx.send(f"❌ Error: {e}")
 
 async def main():
     bot = BetBot()

@@ -18,7 +18,9 @@ async def init_db():
                 home_team TEXT,
                 away_team TEXT,
                 status TEXT,
-                winner TEXT
+                winner TEXT,
+                live_msg_id INTEGER,
+                last_score TEXT
             )
         ''')
         
@@ -290,3 +292,13 @@ async def get_top_users(limit=10):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT ?', (limit,)) as cursor:
             return await cursor.fetchall()
+
+async def get_live_msg_info(match_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT live_msg_id, last_score FROM matches WHERE match_id = ?', (int(match_id),)) as cursor:
+            return await cursor.fetchone()
+
+async def update_live_msg_info(match_id, msg_id, score):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('UPDATE matches SET live_msg_id = ?, last_score = ? WHERE match_id = ?', (msg_id, score, int(match_id)))
+        await db.commit()
