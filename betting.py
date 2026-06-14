@@ -84,7 +84,7 @@ async def resolve_parlays_for_match(bot, match_id, winner):
         
         for leg_m_id, pred, leg_status in legs:
             # Asegurar comparación numérica
-            if int(leg_m_id) == int(match_id) and leg_status == 'PENDING':
+            if str(leg_m_id) == str(match_id) and leg_status == 'PENDING':
                 print(f"DEBUG: Coincidencia en parlay {p_id}, pierna {leg_m_id}. Predicción: {pred}, Resultado: {winner}")
                 
                 new_status = 'WON' if pred == winner else 'LOST'

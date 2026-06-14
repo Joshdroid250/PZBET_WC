@@ -14,7 +14,7 @@ async def init_db():
         
         await db.execute('''
             CREATE TABLE IF NOT EXISTS matches (
-                match_id INTEGER PRIMARY KEY,
+                match_id TEXT PRIMARY KEY,
                 home_team TEXT,
                 away_team TEXT,
                 status TEXT,
@@ -28,9 +28,15 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS bets (
                 bet_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
-                match_id INTEGER,
+                match_id TEXT,
                 amount REAL,
                 prediction TEXT,
+                home_score INTEGER,
+                away_score INTEGER,
+                over_under_type TEXT,
+                over_under_line REAL,
+                combo_type TEXT,
+                combo_line REAL,
                 resolved BOOLEAN DEFAULT 0,
                 payout REAL DEFAULT 0.0,
                 won BOOLEAN,
@@ -62,7 +68,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS parlay_legs (
                 leg_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 parlay_id INTEGER,
-                match_id INTEGER,
+                match_id TEXT,
                 prediction TEXT,
                 status TEXT DEFAULT 'PENDING', -- PENDING, WON, LOST
                 FOREIGN KEY (parlay_id) REFERENCES parlays (parlay_id),
@@ -79,7 +85,7 @@ async def place_parlay(user_id, amount, legs):
             parlay_id = cursor.lastrowid
             for match_id, prediction in legs:
                 await db.execute('INSERT INTO parlay_legs (parlay_id, match_id, prediction) VALUES (?, ?, ?)', 
-                                (parlay_id, int(match_id), prediction))
+                                (parlay_id, str(match_id), prediction))
         await db.commit()
         return parlay_id
 
@@ -112,7 +118,7 @@ async def get_parlay_legs(parlay_id):
 async def update_parlay_leg_status(parlay_id, match_id, status):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE parlay_legs SET status = ? WHERE parlay_id = ? AND match_id = ?', 
-                        (status, parlay_id, int(match_id)))
+                        (status, parlay_id, str(match_id)))
         await db.commit()
 
 async def resolve_parlay(parlay_id, payout, won):
@@ -203,7 +209,7 @@ async def add_or_update_match(match_id, home_team, away_team, status, winner=Non
 
 async def get_active_bets_for_match(match_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute('SELECT user_id, amount, prediction FROM bets WHERE match_id = ? AND resolved = 0', (int(match_id),)) as cursor:
+        async with db.execute('SELECT user_id, amount, prediction FROM bets WHERE match_id = ? AND resolved = 0', (str(match_id),)) as cursor:
             return await cursor.fetchall()
 
 async def get_user_active_bets(user_id):
@@ -220,13 +226,13 @@ async def get_user_active_bets(user_id):
 
 async def get_bet_amount(user_id, match_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute('SELECT amount FROM bets WHERE user_id = ? AND match_id = ? AND resolved = 0', (user_id, int(match_id))) as cursor:
+        async with db.execute('SELECT amount FROM bets WHERE user_id = ? AND match_id = ? AND resolved = 0', (user_id, str(match_id))) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else None
 
 async def remove_bet(user_id, match_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('DELETE FROM bets WHERE user_id = ? AND match_id = ? AND resolved = 0', (user_id, int(match_id)))
+        await db.execute('DELETE FROM bets WHERE user_id = ? AND match_id = ? AND resolved = 0', (user_id, str(match_id)))
         await db.commit()
 
 async def remove_parlay(user_id, parlay_id):
@@ -242,13 +248,13 @@ async def mark_bet_resolved(match_id, user_id, payout, won):
             UPDATE bets 
             SET resolved = 1, payout = ?, won = ? 
             WHERE match_id = ? AND user_id = ? AND resolved = 0
-        ''', (payout, won, int(match_id), user_id))
+        ''', (payout, won, str(match_id), user_id))
         await db.commit()
 
 async def mark_all_bets_resolved_empty(match_id):
     """Marks bets as resolved with 0 payout if match ended but logic didn't catch specific winners (fallback)."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('UPDATE bets SET resolved = 1 WHERE match_id = ? AND resolved = 0', (int(match_id),))
+        await db.execute('UPDATE bets SET resolved = 1 WHERE match_id = ? AND resolved = 0', (str(match_id),))
         await db.commit()
 
 async def get_all_active_match_ids():
@@ -309,10 +315,10 @@ async def get_top_users(limit=10):
 
 async def get_live_msg_info(match_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute('SELECT live_msg_id, last_score FROM matches WHERE match_id = ?', (int(match_id),)) as cursor:
+        async with db.execute('SELECT live_msg_id, last_score FROM matches WHERE match_id = ?', (str(match_id),)) as cursor:
             return await cursor.fetchone()
 
 async def update_live_msg_info(match_id, msg_id, score):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('UPDATE matches SET live_msg_id = ?, last_score = ? WHERE match_id = ?', (msg_id, score, int(match_id)))
+        await db.execute('UPDATE matches SET live_msg_id = ?, last_score = ? WHERE match_id = ?', (msg_id, score, str(match_id)))
         await db.commit()

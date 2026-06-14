@@ -52,7 +52,7 @@ class PozoMatchSelect(discord.ui.Select):
         super().__init__(placeholder="Selecciona un partido para ver el pozo...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        match_id = int(self.values[0])
+        match_id = str(self.values[0])
         embed = await get_pozo_embed(match_id)
         if embed:
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -279,7 +279,7 @@ class ParlayMatchSelect(discord.ui.Select):
             await interaction.response.send_message("Esta no es tu sesión.", ephemeral=True)
             return
 
-        match_id = int(self.values[0])
+        match_id = str(self.values[0])
         match_info = await api_football.get_match_details(match_id)
         
         home = match_info['homeTeam']['name']
@@ -333,7 +333,7 @@ class MatchSelect(discord.ui.Select):
             await interaction.response.send_message("No puedes interactuar con el menú de otro usuario.", ephemeral=True)
             return
 
-        match_id = int(self.values[0])
+        match_id = str(self.values[0])
         match_info = await api_football.get_match_details(match_id)
         
         home = match_info['homeTeam']['name']
@@ -410,11 +410,15 @@ class CashoutSelect(discord.ui.Select):
 
         user_id = interaction.user.id
         val_parts = self.values[0].split('_')
-        prefix, bet_id, amount = val_parts[0], int(val_parts[1]), float(val_parts[2])
+        prefix = val_parts[0]
+        # match_id/parlay_id es val_parts[1], amount es val_parts[2]
+        raw_id = val_parts[1]
+        amount = float(val_parts[2])
         return_amount = amount * 0.8
         
         if prefix == 'ind':
-            match_info = await api_football.get_match_details(bet_id)
+            match_id = raw_id # Mantener como string para FIFA IDs
+            match_info = await api_football.get_match_details(match_id)
             if match_info and match_info['status'] == 'FINISHED':
                 await interaction.response.send_message("❌ El partido ya terminó.", ephemeral=True)
                 return
@@ -425,9 +429,10 @@ class CashoutSelect(discord.ui.Select):
                 await interaction.response.send_message("🔒 **Mercado Suspendido**: El partido está terminando. Cashout deshabilitado.", ephemeral=True)
                 return
 
-            await database.remove_bet(user_id, bet_id)
+            await database.remove_bet(user_id, match_id)
         else:
-            await database.remove_parlay(user_id, bet_id)
+            parlay_id = int(raw_id) # Parlay ID sigue siendo numérico (autoincrement)
+            await database.remove_parlay(user_id, parlay_id)
 
         await database.update_balance(user_id, return_amount)
         
@@ -480,16 +485,20 @@ class Betting(commands.Cog):
         self.check_matches.cancel()
         self.fast_score_update.cancel()
 
-    @tasks.loop(seconds=1)
+    @tasks.loop(seconds=5)
     async def fast_score_update(self):
-        """Tarea de alta frecuencia (1s) para actualizar marcadores y cerrar partidos rápido."""
+        """Tarea de alta frecuencia (5s) para actualizar marcadores y cerrar partidos rápido."""
         try:
             channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
             if not channel_id_env: return
 
             # Obtener partidos con apuestas activas y sus nombres
             active_matches = await database.get_active_matches_with_names()
-            if not active_matches: return
+            if not active_matches: 
+                # print("DEBUG: No hay apuestas activas en este ciclo.")
+                return
+
+            print(f"🔍 [DEBUG] Procesando {len(active_matches)} partidos activos...")
 
             # 1. Revisar partidos en vivo (LIVE)
             data_live = await api_football.fetch_fifa_live_scores()
@@ -501,7 +510,9 @@ class Betting(commands.Cog):
             
             # Combinar para procesamiento
             all_fifa = fifa_live + fifa_finished
-            if not all_fifa: return
+            if not all_fifa: 
+                print("DEBUG: La API de la FIFA no devolvió partidos LIVE ni FINISHED.")
+                return
 
             channel_id = int(str(channel_id_env).strip().strip('"').strip("'"))
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
@@ -514,10 +525,15 @@ class Betting(commands.Cog):
                 f_status = f_match['status']
                 
                 # Buscar si este partido de FIFA coincide con uno de nuestros partidos apostados
-                internal_match = next((m for m in active_matches if m[1] == f_home and m[2] == f_away), None)
+                # Intentamos primero por ID (más preciso) y luego por nombre si falla
+                internal_match = next((m for m in active_matches if str(m[0]) == str(f_match['id'])), None)
+                if not internal_match:
+                    internal_match = next((m for m in active_matches if m[1] == f_home and m[2] == f_away), None)
+                
                 if not internal_match: continue
 
                 m_id = internal_match[0]
+                print(f"⚽ [UPDATE] {f_home} {f_score} {f_away} ({f_status})")
                 
                 # Si el partido ha terminado en la FIFA API, forzar resolución
                 if f_status == 'FINISHED':

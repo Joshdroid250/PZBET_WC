@@ -1,78 +1,63 @@
-# ⚽ BetBot - Simulador de Apuestas para Discord
+# ⚽ PZBET - FIFA World Cup Edition
 
-BetBot es un bot de Discord diseñado para gestionar un sistema de apuestas deportivas basado en un modelo de **Pozo Mutuo** con inyección de la casa. Incluye una interfaz moderna basada en componentes de Discord (Modals, Selects, Buttons) y un sistema robusto de apuestas combinadas (Parlays).
+PZBET es un bot de Discord avanzado para la gestión de apuestas deportivas tipo **Parimutuel** (pozo común), totalmente optimizado para la Copa del Mundo 2026 utilizando la API oficial de la FIFA.
 
----
+## 🚀 Características Principales
 
-## 🚀 Funcionalidades Principales
+- **API FIFA Integrada**: Conexión en tiempo real con marcadores, estados de partidos e IDs alfanuméricos oficiales.
+- **Sistema Parimutuel**: Las cuotas se calculan dinámicamente basadas en el volumen total del pozo.
+- **Rastreador de Goles en Vivo**: Actualización automática de marcadores en canales de anuncios con edición de mensajes en tiempo real.
+- **Candado del Minuto 90**: Bloqueo automático de apuestas y cashouts al llegar al tiempo reglamentario para proteger la integridad del pozo.
+- **Parlays (Combinadas)**: Soporte para apuestas múltiples con resolución automática.
+- **Cashout**: Reembolso parcial (80%) para apuestas en partidos que aún no han terminado o llegado al minuto 90.
+- **Administración Robusta**: Herramientas para limpieza de base de datos, resolución manual y gestión de usuarios.
 
-### ⚽ Sistema de Apuestas
-- **Apuestas Individuales**: Apuesta a ganador local, visitante o empate desde menús privados.
-- **Parlays (Combinadas)**: Constructor visual para agrupar varios partidos en una sola jugada y maximizar ganancias.
-- **Cuotas Dinámicas**: Multiplicadores en tiempo real que se ajustan según el volumen de apuestas y el bono de la casa.
-- **Análisis de Pozo (`/pozo`)**: Herramienta pública para ver la liquidez y las cuotas actuales de cualquier partido.
-- **Cashout**: Retira tus jugadas antes del pitazo final y recupera el 80% de tu dinero.
+## 🛠️ Instalación
 
-### 💰 Economía y Usuario
-- **Bono de Bienvenida**: Recibe $100.00 monedas virtuales al unirte con `/join`.
-- **Recarga Diaria Automática**: Si te quedas sin fondos, el bot te regala **$15.00** cada 24 horas (persistente a reinicios).
-- **Roles por Desempeño**: Sistema automático de rangos de Discord (Broke, Gambler, Pro) según tu balance actual.
-- **Ranking Global (`/top`)**: Tabla de posiciones pública para ver quién es el apostador más exitoso del servidor.
-
-### 🤖 Automatización y UX
-- **Marcador en Vivo**: Un mensaje dinámico en el canal de anuncios que se actualiza automáticamente y se borra al terminar el partido.
-- **Mensajes Efímeros**: Los menús de apuestas son privados; solo tú puedes verlos e interactuar con ellos, manteniendo el chat limpio y seguro.
-- **Sincronización Total**: Comandos Slash modernizados con autocompletado y sugerencias nativas.
-
----
-
-## 🛠️ Instalación y Configuración
-
-### Requisitos
-- Python 3.10 o superior.
-- Una cuenta en [API-Football](https://www.football-data.org/).
-- Token de Bot con Intents de `Message Content` y `Server Members`.
-
-### Pasos
-1. **Clonar e Instalar:**
+1. Clona el repositorio.
+2. Crea un entorno virtual y activa:
    ```bash
-   git clone https://github.com/tu-usuario/betbot.git
+   python -m venv venv
+   source venv/bin/activate  # En Windows: venv\Scripts\activate
+   ```
+3. Instala las dependencias:
+   ```bash
    pip install -r requirements.txt
    ```
-
-2. **Configurar `.env`:**
-   ```env
-   DISCORD_TOKEN=...
-   FOOTBALL_API_KEY=...
-   ANNOUNCEMENT_CHANNEL_ID=...
-   HOUSE_INJECTION=50.0
-   COMPETITION_CODE=PL
-   ```
-
-3. **Migrar e Iniciar:**
+4. Configura tu archivo `.env` (ver sección de Configuración).
+5. Inicia el bot:
    ```bash
-   python migrate_db.py
    python bot.py
    ```
 
----
+## ⚙️ Configuración (.env)
 
-## 📖 Comandos Disponibles
+El bot requiere las siguientes variables de entorno:
 
-| Comando | Visibilidad | Descripción |
-| :--- | :--- | :--- |
-| `/join` | Privado | Regístrate y recibe $100. |
-| `/balance` | Privado | Mira tu saldo actual. |
-| `/matches` | Privado | Menú para apostar en próximos partidos. |
-| `/vivo` | Privado | Mira partidos que se juegan ahora mismo. |
-| `/parlay` | Privado | Constructor de apuestas combinadas. |
-| `/pozo <id>` | **Público** | Análisis de volumen y cuotas del partido. |
-| `/top` | **Público** | Ranking de los 10 más ricos. |
-| `/historial_all`| **Público** | Historial de apuestas de todo el servidor. |
-| `/ayuda` | Privado | Guía interactiva de comandos. |
-| `/config_roles` | Admin | Configura roles por balance. |
+```env
+DISCORD_TOKEN=tu_token_aquí
+BOT_PREFIX=!
+ANNOUNCEMENT_CHANNEL_ID=id_del_canal_de_goles
+COMPETITION_CODE=WC
+FIFA_API_BASE_URL=https://fifaapi-v7l1.onrender.com/v4
+```
 
----
+## 📂 Estructura del Proyecto
 
-## 🤖 Créditos
-Este bot ha sido desarrollado y optimizado con la asistencia de **Gemini**, la inteligencia artificial de Google, colaborando en la arquitectura asíncrona, lógica de apuestas y diseño de la interfaz de usuario.
+- `bot.py`: Punto de entrada principal.
+- `api_football.py`: Módulo de comunicación con la API de la FIFA.
+- `database.py`: Gestión de persistencia en SQLite (Soporta IDs de texto).
+- `betting.py`: Lógica matemática de cálculos de premios y multiplicadores.
+- `cogs/`: Comandos de Discord organizados por módulos.
+- `mantenimiento_db/`: Scripts para diagnósticos y reparaciones de la base de datos.
+- `tests_simulacion/`: Suite de pruebas para verificar la lógica de pagos y el candado del minuto 90.
+
+## 🔒 Seguridad y Robustez
+
+- **IDs de Texto**: Migrado de IDs enteros a alfanuméricos para total compatibilidad con la FIFA.
+- **Manejo de Errores API**: Sistema de reintentos automático para errores 500 y protección contra Rate Limits.
+- **Cierre Rápido**: El bot detecta el estado `FINISHED` desde múltiples endpoints para asegurar que los premios se repartan apenas termina el encuentro.
+
+## ⚖️ Licencia
+
+Este proyecto es para uso personal y educativo. Todos los datos de partidos son propiedad de sus respectivos proveedores.
