@@ -95,7 +95,11 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             await interaction.response.send_message("❌ No estás registrado. Usa `/join` primero.", ephemeral=True)
             return
 
-        if balance < amount_val:
+        # Redondear a 2 decimales para evitar problemas de precisión float (ej: 0.489999 vs 0.49)
+        balance_rounded = round(balance, 2)
+        amount_rounded = round(amount_val, 2)
+
+        if balance_rounded < (amount_rounded - 0.0001):
             await interaction.response.send_message(f"❌ Saldo insuficiente. Tienes **${balance:.2f}**.", ephemeral=True)
             return
 
@@ -122,9 +126,9 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         # Registrar apuesta
         await database.place_bet(user_id, self.match_id, amount_val, self.prediction)
         
-        # Limpiar el mensaje original de selección (UX)
+        # Borrar el mensaje original de selección para limpiar el chat (UX)
         try:
-            await interaction.message.edit(content="✅ Procesando apuesta...", view=None, embed=None)
+            await interaction.message.delete()
         except: pass
 
         # Obtener el pozo actualizado
@@ -208,9 +212,9 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         legs_db = [(l[0], l[1]) for l in self.legs]
         await database.place_parlay(user_id, amount_val, legs_db)
 
-        # Limpiar menú de construcción
+        # Borrar el menú de construcción para mantener limpio el chat
         try:
-            await interaction.message.edit(content="✅ Parlay registrado con éxito.", view=None, embed=None)
+            await interaction.message.delete()
         except: pass
 
         embed = discord.Embed(title="🚀 Parlay Confirmado", color=discord.Color.gold())
@@ -227,15 +231,6 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         # Opción B: Mostrar botón para ver pozos
         view = ParlayPozoView(match_ids)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-        
-        legs_text = ""
-        for _, pred, home, away in self.legs:
-            pred_text = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-            legs_text += f"• **{home} vs {away}**: {pred_text}\n"
-        
-        embed.add_field(name="Combinaciones", value=legs_text, inline=False)
-        embed.set_footer(text="¡Ganas si aciertas todas las predicciones!")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class ParlayBuilderView(discord.ui.View):
     def __init__(self, matches, user_id):
@@ -258,6 +253,16 @@ class ParlayBuilderView(discord.ui.View):
             return
             
         await interaction.response.send_modal(ParlayAmountModal(self.selected_legs))
+
+    @discord.ui.button(label="❌ Cancelar", style=discord.ButtonStyle.danger, row=2)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("No puedes cerrar este menú.", ephemeral=True)
+            return
+        try:
+            await interaction.message.delete()
+        except:
+            await interaction.response.send_message("Operación cancelada.", ephemeral=True)
 
 class ParlayMatchSelect(discord.ui.Select):
     def __init__(self, matches):
@@ -284,6 +289,7 @@ class ParlayMatchSelect(discord.ui.Select):
         btn_home = discord.ui.Button(label=f"Ganador: {home}", style=discord.ButtonStyle.primary)
         btn_draw = discord.ui.Button(label="Empate", style=discord.ButtonStyle.secondary)
         btn_away = discord.ui.Button(label=f"Ganador: {away}", style=discord.ButtonStyle.danger)
+        btn_cancel = discord.ui.Button(label="❌ Cancelar", style=discord.ButtonStyle.gray)
 
         async def add_leg(inter, pred):
             self.view.selected_legs = [l for l in self.view.selected_legs if l[0] != match_id]
@@ -292,13 +298,21 @@ class ParlayMatchSelect(discord.ui.Select):
             embed = discord.Embed(title="🏗️ Construyendo Parlay", description=f"Selecciones actuales:\n{legs_text}", color=discord.Color.blue())
             await inter.response.edit_message(embed=embed, view=self.view)
 
+        async def cancel_leg(inter):
+            try:
+                await inter.message.delete()
+            except:
+                await inter.response.edit_message(content="Selección cancelada.", view=None)
+
         btn_home.callback = lambda i: add_leg(i, "HOME_TEAM")
         btn_draw.callback = lambda i: add_leg(i, "DRAW")
         btn_away.callback = lambda i: add_leg(i, "AWAY_TEAM")
+        btn_cancel.callback = cancel_leg
         
         view.add_item(btn_home)
         view.add_item(btn_draw)
         view.add_item(btn_away)
+        view.add_item(btn_cancel)
         
         await interaction.response.send_message(f"¿Qué resultado predices para **{home} vs {away}**?", view=view, ephemeral=True)
 
@@ -340,17 +354,27 @@ class MatchSelect(discord.ui.Select):
         btn_home = discord.ui.Button(label=home, style=discord.ButtonStyle.primary)
         btn_draw = discord.ui.Button(label="Empate", style=discord.ButtonStyle.secondary)
         btn_away = discord.ui.Button(label=away, style=discord.ButtonStyle.danger)
+        btn_cancel = discord.ui.Button(label="❌ Cancelar", style=discord.ButtonStyle.gray)
 
         async def make_bet_callback(inter, team, pred):
             await inter.response.send_modal(BetModal(match_id, team, pred))
 
+        async def cancel_callback(inter):
+            try:
+                await inter.message.delete()
+            except:
+                # Si es efímero y no se puede borrar, al menos quitamos la vista
+                await inter.response.edit_message(content="Menú cerrado.", embed=None, view=None)
+
         btn_home.callback = lambda i: make_bet_callback(i, home, "HOME_TEAM")
         btn_draw.callback = lambda i: make_bet_callback(i, "Empate", "DRAW")
         btn_away.callback = lambda i: make_bet_callback(i, away, "AWAY_TEAM")
+        btn_cancel.callback = cancel_callback
 
         view.add_item(btn_home)
         view.add_item(btn_draw)
         view.add_item(btn_away)
+        view.add_item(btn_cancel)
 
         await interaction.response.edit_message(content=None, embed=embed, view=view)
 
