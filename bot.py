@@ -40,25 +40,49 @@ class BetBot(commands.Bot):
         print(f'Conectado como {self.user.name} (ID: {self.user.id})')
         print('------')
 
+    async def on_message(self, message):
+        # Ignorar mensajes de otros bots
+        if message.author.bot:
+            return
+
+        # Mecanismo de emergencia: Sincronización por mención
+        # Si mencionas al bot y escribes "sync", se sincronizará localmente
+        if self.user.mentioned_in(message) and "sync" in message.content.lower():
+            if message.author.guild_permissions.administrator:
+                await message.channel.send(f"🔄 **Sincronización de emergencia detectada.** Sincronizando en {message.guild.name}...")
+                try:
+                    self.tree.copy_global_to(guild=message.guild)
+                    synced = await self.tree.sync(guild=message.guild)
+                    await message.channel.send(f"✅ ¡Éxito! {len(synced)} comandos sincronizados localmente.")
+                except Exception as e:
+                    await message.channel.send(f"❌ Error: {e}")
+            else:
+                await message.channel.send("❌ Solo administradores pueden usar la sincronización.")
+            return # Detener procesamiento para evitar que intente ejecutarlo como comando prefix también
+
+        # Procesar otros comandos con prefijo (!) normalmente
+        await self.process_commands(message)
+
     @commands.command(name='sync')
     @commands.has_permissions(administrator=True)
-    async def sync(self, ctx, scope: str = "global"):
-        """Sincroniza los comandos de barra. Uso: !sync global o !sync guild."""
+    async def sync(self, ctx, scope: str = "guild"):
+        """Sincroniza los comandos de barra. Uso: !sync guild (recomendado) o !sync global."""
         if scope == "guild":
-            await ctx.send(f"⏳ Sincronizando comandos en este servidor...")
+            await ctx.send(f"⏳ Sincronizando comandos localmente en **{ctx.guild.name}**...")
             try:
                 self.tree.copy_global_to(guild=ctx.guild)
                 synced = await self.tree.sync(guild=ctx.guild)
-                await ctx.send(f"✅ Sincronización LOCAL completa. {len(synced)} comandos sincronizados en este servidor.")
+                await ctx.send(f"✅ Sincronización LOCAL completa. {len(synced)} comandos listos para usar en este servidor.")
+                print(f"Sync local exitoso en {ctx.guild.name} ({ctx.guild.id})")
             except Exception as e:
-                await ctx.send(f"❌ Error local: {e}")
+                await ctx.send(f"❌ Error local: `{e}`")
         else:
             await ctx.send("⏳ Sincronizando comandos GLOBALMENTE (puede tardar hasta 1h)...")
             try:
                 synced = await self.tree.sync()
                 await ctx.send(f"✅ Sincronización GLOBAL completa. {len(synced)} comandos registrados en Discord.")
             except Exception as e:
-                await ctx.send(f"❌ Error global: {e}")
+                await ctx.send(f"❌ Error global: `{e}`")
 
 async def main():
     bot = BetBot()

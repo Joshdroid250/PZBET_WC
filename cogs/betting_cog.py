@@ -7,6 +7,63 @@ import os
 import asyncio
 from datetime import datetime, timezone
 
+async def get_pozo_embed(match_id):
+    """Helper para construir el Embed del pozo de forma consistente."""
+    match_info = await api_football.get_match_details(match_id)
+    if not match_info:
+        return None
+
+    total_bets, pools = await database.get_match_pools(match_id)
+    total_pool = total_bets + betting.HOUSE_INJECTION
+    
+    home = match_info['homeTeam']['name']
+    away = match_info['awayTeam']['name']
+    
+    embed = discord.Embed(
+        title=f"📊 Análisis del Pozo: {home} vs {away}",
+        description=f"Estado: **{match_info['status']}**\nVolumen Total: **${total_pool:.2f}**",
+        color=discord.Color.blue()
+    )
+
+    for label, pred_key in [("Local", "HOME_TEAM"), ("Visitante", "AWAY_TEAM"), ("Empate", "DRAW")]:
+        amount = pools.get(pred_key, 0)
+        multiplier = min(10.0, total_pool / amount if amount > 0 else total_pool / 1.0)
+        bar = betting.get_multiplier_bar(multiplier)
+        name = home if pred_key == "HOME_TEAM" else away if pred_key == "AWAY_TEAM" else "Empate"
+        
+        embed.add_field(
+            name=f"🔹 {name}",
+            value=f"Apostado: `${amount:.2f}`\nCuota: **x{multiplier:.2f}**\n{bar}",
+            inline=True
+        )
+
+    embed.set_footer(text=f"ID del partido: {match_id} | Inyección de la casa incluida.")
+    return embed
+
+class PozoMatchSelect(discord.ui.Select):
+    def __init__(self, matches):
+        options = [
+            discord.SelectOption(
+                label=f"{m[1]} vs {m[2]}",
+                description=f"Consultar pozo actual",
+                value=str(m[0])
+            ) for m in matches[:25]
+        ]
+        super().__init__(placeholder="Selecciona un partido para ver el pozo...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        match_id = int(self.values[0])
+        embed = await get_pozo_embed(match_id)
+        if embed:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Error al obtener detalles del pozo.", ephemeral=True)
+
+class PozoMatchView(discord.ui.View):
+    def __init__(self, matches):
+        super().__init__(timeout=120)
+        self.add_item(PozoMatchSelect(matches))
+
 class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
     amount = discord.ui.TextInput(
         label='Cantidad a apostar',
@@ -70,32 +127,41 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             await interaction.message.edit(content="✅ Procesando apuesta...", view=None, embed=None)
         except: pass
 
-        total_bets, pools = await database.get_match_pools(self.match_id)
-        house_injection = betting.HOUSE_INJECTION
-        total_pool = total_bets + house_injection
+        # Obtener el pozo actualizado
+        embed_pozo = await get_pozo_embed(self.match_id)
         
-        pred_pool = pools.get(self.prediction, 0)
-        multiplier = total_pool / pred_pool if pred_pool > 0 else 1.0
-        if multiplier > 10.0: multiplier = 10.0
-        bar = betting.get_multiplier_bar(multiplier)
-
+        # Crear embed de confirmación personalizado
         home_team = match_info['homeTeam']['name']
         away_team = match_info['awayTeam']['name']
         home_emoji = api_football.get_flag_emoji(home_team)
         away_emoji = api_football.get_flag_emoji(away_team)
 
-        embed = discord.Embed(title="✅ Apuesta Confirmada", color=discord.Color.green())
-        embed.add_field(name="Usuario", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Partido", value=f"{home_emoji} **{home_team}** vs **{away_team}** {away_emoji}", inline=False)
-        embed.add_field(name="Tu Predicción", value=f"**{self.team_name}**", inline=True)
-        embed.add_field(name="Monto", value=f"**${amount_val:.2f}**", inline=True)
-        embed.add_field(name="📊 Estadísticas", value=f"**Volumen:** ${total_pool:.2f}\n**Multiplicador:** x{multiplier:.2f}\n{bar}", inline=False)
+        confirm_embed = discord.Embed(title="✅ Apuesta Confirmada", color=discord.Color.green())
+        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}"
         
-        flag_home = api_football.get_flag_url(home_team)
-        if flag_home:
-            embed.set_thumbnail(url=flag_home)
-            
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Enviamos ambos embeds: el de confirmación y el del pozo actual
+        await interaction.response.send_message(embeds=[confirm_embed, embed_pozo], ephemeral=True)
+
+class ParlayPozoView(discord.ui.View):
+    """Vista para mostrar los pozos de un parlay de forma bajo demanda."""
+    def __init__(self, match_ids):
+        super().__init__(timeout=120)
+        self.match_ids = match_ids
+
+    @discord.ui.button(label="🔍 Ver Pozos de mis Partidos", style=discord.ButtonStyle.secondary)
+    async def view_pozos(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        embeds = []
+        for m_id in self.match_ids:
+            embed = await get_pozo_embed(m_id)
+            if embed:
+                embeds.append(embed)
+        
+        if embeds:
+            # Discord permite enviar hasta 10 embeds por mensaje
+            await interaction.followup.send(content="📊 Aquí tienes el estado actual de los pozos en tu parlay:", embeds=embeds[:10], ephemeral=True)
+        else:
+            await interaction.followup.send("❌ No se pudieron cargar los pozos.", ephemeral=True)
 
 class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
     amount = discord.ui.TextInput(
@@ -123,8 +189,9 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
             return
 
         # --- Candado de Seguridad Minuto 90 para Parlays ---
-        now_utc = datetime.now(timezone.utc)
+        match_ids = []
         for m_id, pred, home, away in self.legs:
+            match_ids.append(m_id)
             match_info = await api_football.get_match_details(m_id)
             if not match_info: continue
             
@@ -148,6 +215,18 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
 
         embed = discord.Embed(title="🚀 Parlay Confirmado", color=discord.Color.gold())
         embed.add_field(name="Monto Total", value=f"${amount_val:.2f}", inline=False)
+        
+        legs_text = ""
+        for _, pred, home, away in self.legs:
+            pred_text = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            legs_text += f"• **{home} vs {away}**: {pred_text}\n"
+        
+        embed.add_field(name="Combinaciones", value=legs_text, inline=False)
+        embed.set_footer(text="¡Ganas si aciertas todas las predicciones!")
+        
+        # Opción B: Mostrar botón para ver pozos
+        view = ParlayPozoView(match_ids)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         
         legs_text = ""
         for _, pred, home, away in self.legs:
@@ -541,40 +620,23 @@ class Betting(commands.Cog):
         await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id), ephemeral=True)
 
     @commands.hybrid_command(name='pozo', aliases=['p'])
-    async def pozo(self, ctx, match_id: int):
+    async def pozo(self, ctx, match_id: int = None):
         """Muestra el volumen total y las cuotas actuales de un partido (Público)."""
-        match_info = await api_football.get_match_details(match_id)
-        if not match_info:
+        if match_id is None:
+            # Modo interactivo: buscar partidos con apuestas o próximos
+            active_matches = await database.get_active_matches_with_names()
+            if not active_matches:
+                await ctx.send("❌ No hay partidos con apuestas activas en este momento. Usa `/pozo <id>` si conoces uno específico.", ephemeral=True)
+                return
+            
+            await ctx.send("Selecciona un partido para ver el estado del pozo:", view=PozoMatchView(active_matches), ephemeral=True)
+            return
+
+        embed = await get_pozo_embed(match_id)
+        if not embed:
             await ctx.send("❌ No se encontró el partido.")
             return
 
-        total_bets, pools = await database.get_match_pools(match_id)
-        total_pool = total_bets + betting.HOUSE_INJECTION
-        
-        home = match_info['homeTeam']['name']
-        away = match_info['awayTeam']['name']
-        emoji_h = api_football.get_flag_emoji(home)
-        emoji_a = api_football.get_flag_emoji(away)
-
-        embed = discord.Embed(
-            title=f"📊 Análisis del Pozo: {home} vs {away}",
-            description=f"Estado: **{match_info['status']}**\nVolumen Total: **${total_pool:.2f}**",
-            color=discord.Color.blue()
-        )
-
-        for label, pred_key in [("Local", "HOME_TEAM"), ("Visitante", "AWAY_TEAM"), ("Empate", "DRAW")]:
-            amount = pools.get(pred_key, 0)
-            multiplier = min(10.0, total_pool / amount if amount > 0 else total_pool / 1.0)
-            bar = betting.get_multiplier_bar(multiplier)
-            name = home if pred_key == "HOME_TEAM" else away if pred_key == "AWAY_TEAM" else "Empate"
-            
-            embed.add_field(
-                name=f"🔹 {name}",
-                value=f"Apostado: `${amount:.2f}`\nCuota: **x{multiplier:.2f}**\n{bar}",
-                inline=True
-            )
-
-        embed.set_footer(text=f"ID del partido: {match_id} | Inyección de la casa incluida.")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='vivo')
