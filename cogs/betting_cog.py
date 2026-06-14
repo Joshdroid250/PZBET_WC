@@ -49,10 +49,8 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             return
 
         # --- Candado de Seguridad Minuto 90 ---
-        now_utc = datetime.now(timezone.utc)
-        start_dt = datetime.fromisoformat(match_info['utcDate'].replace('Z', '+00:00'))
-        elapsed_mins = (now_utc - start_dt).total_seconds() / 60
-        if elapsed_mins >= 90:
+        match_minute = api_football.calculate_match_minute(match_info['utcDate'])
+        if match_minute >= 90:
             await interaction.response.send_message("🔒 **Mercado Suspendido**: El partido está en tiempo de descuento o por terminar. No se permiten más apuestas.", ephemeral=True)
             return
 
@@ -134,9 +132,8 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
                 await interaction.response.send_message(f"❌ El partido **{home} vs {away}** ya ha terminado.", ephemeral=True)
                 return
             
-            start_dt = datetime.fromisoformat(match_info['utcDate'].replace('Z', '+00:00'))
-            elapsed = (now_utc - start_dt).total_seconds() / 60
-            if elapsed >= 90:
+            match_minute = api_football.calculate_match_minute(match_info['utcDate'])
+            if match_minute >= 90:
                 await interaction.response.send_message(f"🔒 **Mercado Suspendido**: El partido **{home} vs {away}** está terminando. No se pueden crear parlays con este juego.", ephemeral=True)
                 return
 
@@ -320,10 +317,8 @@ class CashoutSelect(discord.ui.Select):
                 return
             
             # Bloqueo minuto 90 para cashout
-            now_utc = datetime.now(timezone.utc)
-            start_dt = datetime.fromisoformat(match_info['utcDate'].replace('Z', '+00:00'))
-            elapsed = (now_utc - start_dt).total_seconds() / 60
-            if elapsed >= 90:
+            match_minute = api_football.calculate_match_minute(match_info['utcDate'])
+            if match_minute >= 90:
                 await interaction.response.send_message("🔒 **Mercado Suspendido**: El partido está terminando. Cashout deshabilitado.", ephemeral=True)
                 return
 
@@ -384,7 +379,7 @@ class Betting(commands.Cog):
 
     @tasks.loop(seconds=1)
     async def fast_score_update(self):
-        """Tarea de alta frecuencia (1s) para actualizar marcadores de goles."""
+        """Tarea de alta frecuencia (1s) para actualizar marcadores y cerrar partidos rápido."""
         try:
             channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
             if not channel_id_env: return
@@ -393,19 +388,27 @@ class Betting(commands.Cog):
             active_matches = await database.get_active_matches_with_names()
             if not active_matches: return
 
-            # Solo actuar si hay partidos en vivo en la FIFA API
-            data = await api_football.fetch_fifa_live_scores()
-            fifa_matches = data.get('matches', []) if data else []
-            if not fifa_matches: return
+            # 1. Revisar partidos en vivo (LIVE)
+            data_live = await api_football.fetch_fifa_live_scores()
+            fifa_live = data_live.get('matches', []) if data_live else []
+            
+            # 2. Revisar partidos terminados (FINISHED)
+            data_finished = await api_football.fetch_fifa_finished_matches()
+            fifa_finished = data_finished.get('matches', []) if data_finished else []
+            
+            # Combinar para procesamiento
+            all_fifa = fifa_live + fifa_finished
+            if not all_fifa: return
 
             channel_id = int(str(channel_id_env).strip().strip('"').strip("'"))
             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
             if not channel: return
 
-            for f_match in fifa_matches:
+            for f_match in all_fifa:
                 f_home = f_match['homeTeam']['name']
                 f_away = f_match['awayTeam']['name']
                 f_score = f"{f_match['score']['fullTime']['home']}-{f_match['score']['fullTime']['away']}"
+                f_status = f_match['status']
                 
                 # Buscar si este partido de FIFA coincide con uno de nuestros partidos apostados
                 internal_match = next((m for m in active_matches if m[1] == f_home and m[2] == f_away), None)
@@ -413,6 +416,44 @@ class Betting(commands.Cog):
 
                 m_id = internal_match[0]
                 
+                # Si el partido ha terminado en la FIFA API, forzar resolución
+                if f_status == 'FINISHED':
+                    print(f"🏁 [CIERRE RÁPIDO - FIFA API] {f_home} vs {f_away} detectado como FINISHED.")
+                    
+                    # 1. Obtener info del mensaje ANTES de actualizar/resolver (evita que se pierda la referencia)
+                    live_info = await database.get_live_msg_info(m_id)
+                    
+                    winner = f_match['score']['winner']
+                    if winner:
+                        # 2. Resolver apuestas y actualizar DB
+                        payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
+                        await betting.resolve_parlays_for_match(self.bot, m_id, winner)
+                        await database.add_or_update_match(m_id, f_home, f_away, 'FINISHED', winner)
+                        
+                        # 3. Limpiar mensaje en vivo usando la info guardada
+                        if live_info and live_info[0]:
+                            try:
+                                msg = await channel.fetch_message(live_info[0])
+                                await msg.delete()
+                                await database.update_live_msg_info(m_id, None, None)
+                                print(f"🗑️ [MSG] Marcador borrado (Cierre Rápido): {f_home} vs {f_away}")
+                            except Exception as e:
+                                print(f"⚠️ No se pudo borrar el mensaje {live_info[0]}: {e}")
+                        
+                        # Anuncio de resultado
+                        winner_name = f_home if winner == 'HOME_TEAM' else f_away if winner == 'AWAY_TEAM' else "Empate"
+                        embed_res = discord.Embed(title=f"🏁 Finalizado: {f_home} vs {f_away}", description=f"El ganador fue: **{winner_name}** ({f_score})", color=discord.Color.gold())
+                        summary = []
+                        for p in payouts:
+                            user = self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])
+                            name = user.mention if user else f"Usuario {p['user_id']}"
+                            res_icon = "✅" if p['won'] else "❌"
+                            summary.append(f"{res_icon} {name}: ${p['payout']:.2f}")
+                        if summary: embed_res.add_field(name="Resumen de Cobros", value="\n".join(summary), inline=False)
+                        await channel.send(embed=embed_res)
+                    continue
+
+                # Si sigue en vivo, actualizar marcador
                 live_info = await database.get_live_msg_info(m_id)
                 if not live_info: continue 
                 
@@ -430,7 +471,8 @@ class Betting(commands.Cog):
                             await database.update_live_msg_info(m_id, msg_id, f_score)
                             print(f"⚽ [GOL DETECTADO - FIFA API] {f_home} {f_score} {f_away} | ID Interno: {m_id}")
                         except: pass
-        except: pass
+        except Exception as e:
+            print(f"Error en fast_score_update: {e}")
 
     @fast_score_update.before_loop
     async def before_fast_score_update(self):
@@ -498,12 +540,12 @@ class Betting(commands.Cog):
         """Retira una apuesta activa."""
         await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id), ephemeral=True)
 
-    @commands.hybrid_command(name='pozo')
+    @commands.hybrid_command(name='pozo', aliases=['p'])
     async def pozo(self, ctx, match_id: int):
         """Muestra el volumen total y las cuotas actuales de un partido (Público)."""
         match_info = await api_football.get_match_details(match_id)
         if not match_info:
-            await ctx.send("❌ No se encontró el partido.", ephemeral=True)
+            await ctx.send("❌ No se encontró el partido.")
             return
 
         total_bets, pools = await database.get_match_pools(match_id)
@@ -598,6 +640,7 @@ class Betting(commands.Cog):
                 if status != 'FINISHED' and fifa_match:
                     if fifa_match['status'] in ['FINISHED', 'TIMED', 'FT']:
                         status = 'FINISHED'
+                        match['status'] = 'FINISHED'
                         match['score'] = fifa_match['score']
 
                 if status in ['IN_PLAY', 'PAUSED', 'LIVE'] or str(m_id) in fifa_live_ids: 
@@ -628,9 +671,8 @@ class Betting(commands.Cog):
                 m_id, status = match['id'], match['status']
                 home, away = match['homeTeam']['name'], match['awayTeam']['name']
                 
-                start_dt = datetime.fromisoformat(match['utcDate'].replace('Z', '+00:00'))
-                elapsed_mins = (now_utc - start_dt).total_seconds() / 60
-                print(f"📌 [LOG] {home} vs {away} | Estado: {status} | Minuto: {elapsed_mins:.1f}'")
+                match_minute = api_football.calculate_match_minute(match['utcDate'])
+                print(f"📌 [LOG] {home} vs {away} | Estado: {status} | Minuto: {match_minute:.1f}'")
                 
                 channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
                 if channel_id_env and status in ['IN_PLAY', 'PAUSED', 'LIVE']:

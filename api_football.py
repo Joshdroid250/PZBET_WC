@@ -58,6 +58,18 @@ async def fetch_fifa_live_scores():
     except:
         return None
 
+async def fetch_fifa_finished_matches():
+    """Consulta el endpoint de la FIFA para partidos finalizados recientemente."""
+    url = "https://fifaapi-v7l1.onrender.com/v4/competitions/WC/matches?status=FINISHED"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as response:
+                if response.status == 200:
+                    return await response.json()
+                return None
+    except:
+        return None
+
 def get_flag_emoji(country_name):
     # Mapeo de nombres de países a emojis de banderas
     mapping = {
@@ -83,3 +95,30 @@ def get_flag_url(country_name):
     if code:
         return f"https://flagcdn.com/w160/{code}.png"
     return None
+
+from datetime import datetime, timezone
+
+def calculate_match_minute(utc_date_str):
+    """Calcula el minuto estimado del partido considerando entretiempo y pequeños retrasos."""
+    try:
+        now_utc = datetime.now(timezone.utc)
+        start_dt = datetime.fromisoformat(utc_date_str.replace('Z', '+00:00'))
+        elapsed = (now_utc - start_dt).total_seconds() / 60
+        
+        # Si el partido no ha empezado
+        if elapsed < 0: return 0.0
+        
+        # Primer tiempo (0-45) + 5 min de posible retraso/adición
+        if elapsed < 50:
+            return elapsed
+        
+        # Entretiempo (aprox 15 min)
+        if 50 <= elapsed < 65:
+            return 45.0
+            
+        # Segundo tiempo: restamos 15 min de entretiempo
+        # También restamos 5 min adicionales por retrasos promedio para ser más precisos
+        # (Total -20 min para partidos de más de 65 min desde el inicio programado)
+        return max(45.0, elapsed - 20.0)
+    except:
+        return 0.0
