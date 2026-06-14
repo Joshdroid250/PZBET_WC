@@ -485,9 +485,9 @@ class Betting(commands.Cog):
         self.check_matches.cancel()
         self.fast_score_update.cancel()
 
-    @tasks.loop(seconds=5)
+    @tasks.loop(seconds=15)
     async def fast_score_update(self):
-        """Tarea de alta frecuencia (5s) para actualizar marcadores y cerrar partidos rápido."""
+        """Tarea de frecuencia moderada (15s) para actualizar marcadores y cerrar partidos."""
         try:
             channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
             if not channel_id_env: return
@@ -851,11 +851,53 @@ class Betting(commands.Cog):
 
     @commands.hybrid_command(name='debug_resolve')
     @commands.has_permissions(administrator=True)
-    async def debug_resolve(self, ctx, match_id: int, winner: str):
-        """[ADMIN] Fuerza resolución."""
+    async def debug_resolve(self, ctx, match_id: str, winner: str):
+        """[ADMIN] Fuerza resolución manual de un partido y anuncia el resultado."""
         winner = winner.upper()
-        await betting.resolve_match_bets(self.bot, match_id, winner)
+        if winner not in ['HOME_TEAM', 'AWAY_TEAM', 'DRAW']:
+            await ctx.send("❌ Ganador inválido. Usa: HOME_TEAM, AWAY_TEAM o DRAW", ephemeral=True)
+            return
+
+        # 1. Obtener info del partido antes de resolver
+        m_info = await database.get_match_by_id(match_id)
+        if not m_info:
+            await ctx.send(f"❌ No se encontró el partido con ID `{match_id}` en la DB.", ephemeral=True)
+            return
+        
+        home_name, away_name = m_info[1], m_info[2]
+
+        # 2. Ejecutar pagos
+        payouts = await betting.resolve_match_bets(self.bot, match_id, winner)
         await betting.resolve_parlays_for_match(self.bot, match_id, winner)
-        await ctx.send(f"✅ Resuelto ID {match_id} como {winner}.", ephemeral=True)
+        await database.add_or_update_match(match_id, home_name, away_name, 'FINISHED', winner)
+
+        # 3. Anuncio en el canal de goles
+        channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
+        if channel_id_env:
+            try:
+                channel_id = int(str(channel_id_env).strip().strip('"').strip("'"))
+                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                if channel:
+                    winner_display = home_name if winner == 'HOME_TEAM' else away_name if winner == 'AWAY_TEAM' else "Empate"
+                    embed_res = discord.Embed(
+                        title=f"🏁 Finalizado (Manual): {home_name} vs {away_name}", 
+                        description=f"El ganador oficial fue: **{winner_display}**", 
+                        color=discord.Color.gold()
+                    )
+                    summary = []
+                    for p in payouts:
+                        user = self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])
+                        name = user.mention if user else f"Usuario {p['user_id']}"
+                        res_icon = "✅" if p['won'] else "❌"
+                        summary.append(f"{res_icon} {name}: ${p['payout']:.2f}")
+                    
+                    if summary:
+                        embed_res.add_field(name="Resumen de Cobros", value="\n".join(summary), inline=False)
+                    
+                    await channel.send(embed=embed_res)
+            except Exception as e:
+                print(f"Error al anunciar debug_resolve: {e}")
+
+        await ctx.send(f"✅ Partido `{home_name} vs {away_name}` resuelto como `{winner}` y anunciado.", ephemeral=True)
 
 async def setup(bot): await bot.add_cog(Betting(bot))

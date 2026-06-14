@@ -322,3 +322,8 @@ async def update_live_msg_info(match_id, msg_id, score):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE matches SET live_msg_id = ?, last_score = ? WHERE match_id = ?', (msg_id, score, str(match_id)))
         await db.commit()
+
+async def get_match_by_id(match_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT match_id, home_team, away_team, status FROM matches WHERE match_id = ?', (str(match_id),)) as cursor:
+            return await cursor.fetchone()
