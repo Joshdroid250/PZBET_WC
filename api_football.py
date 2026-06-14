@@ -46,6 +46,18 @@ async def get_finished_matches(competition='PL'):
     data = await fetch_json(url)
     return data.get('matches', []) if data else []
 
+async def fetch_fifa_live_scores():
+    """Consulta el endpoint especial de la FIFA para marcadores en tiempo real."""
+    url = "https://fifaapi-v7l1.onrender.com/v4/competitions/WC/matches?status=LIVE"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as response:
+                if response.status == 200:
+                    return await response.json()
+                return None
+    except:
+        return None
+
 def get_flag_emoji(country_name):
     # Mapeo de nombres de países a emojis de banderas
     mapping = {

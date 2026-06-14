@@ -14,6 +14,7 @@ class BetBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True # REQUERIDO para el sistema de roles
         super().__init__(command_prefix=PREFIX, intents=intents)
 
     async def setup_hook(self):
@@ -40,15 +41,24 @@ class BetBot(commands.Bot):
         print('------')
 
     @commands.command(name='sync')
-    @commands.is_owner()
-    async def sync(self, ctx):
-        """[OWNER] Sincroniza los comandos de barra manualmente."""
-        await ctx.send("⏳ Sincronizando comandos de barra diagonal...")
-        try:
-            synced = await self.tree.sync()
-            await ctx.send(f"✅ Sincronizados {len(synced)} comandos globalmente. (Puede tardar unos minutos en aparecer en todos los servidores).")
-        except Exception as e:
-            await ctx.send(f"❌ Error: {e}")
+    @commands.has_permissions(administrator=True)
+    async def sync(self, ctx, scope: str = "global"):
+        """Sincroniza los comandos de barra. Uso: !sync global o !sync guild."""
+        if scope == "guild":
+            await ctx.send(f"⏳ Sincronizando comandos en este servidor...")
+            try:
+                self.tree.copy_global_to(guild=ctx.guild)
+                synced = await self.tree.sync(guild=ctx.guild)
+                await ctx.send(f"✅ Sincronización LOCAL completa. {len(synced)} comandos sincronizados en este servidor.")
+            except Exception as e:
+                await ctx.send(f"❌ Error local: {e}")
+        else:
+            await ctx.send("⏳ Sincronizando comandos GLOBALMENTE (puede tardar hasta 1h)...")
+            try:
+                synced = await self.tree.sync()
+                await ctx.send(f"✅ Sincronización GLOBAL completa. {len(synced)} comandos registrados en Discord.")
+            except Exception as e:
+                await ctx.send(f"❌ Error global: {e}")
 
 async def main():
     bot = BetBot()

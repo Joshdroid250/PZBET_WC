@@ -70,12 +70,9 @@ class General(commands.Cog):
 
     @commands.hybrid_command(name='marcador')
     async def marcador(self, ctx):
-        """Muestra los resultados actuales de los partidos en vivo."""
+        """Muestra los resultados actuales de los partidos en vivo (FIFA API)."""
         import api_football
-        import os
-        competition = os.getenv('COMPETITION_CODE', 'PL')
-        url = f"{api_football.BASE_URL}/competitions/{competition}/matches?status=LIVE"
-        data = await api_football.fetch_json(url)
+        data = await api_football.fetch_fifa_live_scores()
         
         matches = data.get('matches', []) if data else []
         
@@ -84,8 +81,8 @@ class General(commands.Cog):
             return
 
         embed = discord.Embed(
-            title="🏟️ Marcador en Vivo",
-            description="Resultados actuales de la jornada.",
+            title="🏟️ Marcador FIFA en Vivo",
+            description="Resultados en tiempo real (1s delay).",
             color=discord.Color.red()
         )
 

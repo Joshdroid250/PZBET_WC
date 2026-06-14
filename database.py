@@ -83,6 +83,20 @@ async def place_parlay(user_id, amount, legs):
         await db.commit()
         return parlay_id
 
+async def get_all_active_match_ids():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT DISTINCT match_id FROM bets WHERE resolved = 0') as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+async def get_active_matches_with_names():
+    """Returns a list of (id, home, away) for all matches with active bets."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        query = 'SELECT DISTINCT m.match_id, m.home_team, m.away_team FROM matches m JOIN bets b ON m.match_id = b.match_id WHERE b.resolved = 0'
+        async with db.execute(query) as cursor:
+            return await cursor.fetchall()
+
+
 async def get_active_parlay_ids():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT parlay_id FROM parlays WHERE resolved = 0') as cursor:
