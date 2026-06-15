@@ -1,7 +1,8 @@
 import aiosqlite
 import os
 
-DB_PATH = 'betbot.db'
+# Ruta persistente para Railway o local
+DB_PATH = os.path.join(os.getenv('RAILWAY_VOLUME_MOUNT_PATH', '.'), 'betbot.db')
 
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
