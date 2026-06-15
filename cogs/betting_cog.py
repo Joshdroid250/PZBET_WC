@@ -779,7 +779,7 @@ class Betting(commands.Cog):
                             msg_id = live_info[0] if live_info else None
                             last_score = live_info[1] if live_info else None
                             
-                            embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} home vs away {emoji_a}", description=f"Marcador Actual: **{score}**", color=discord.Color.red())
+                            embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {home} vs {away} {emoji_a}", description=f"Marcador Actual: **{score}**", color=discord.Color.red())
                             
                             if msg_id:
                                 try:
