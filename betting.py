@@ -14,15 +14,22 @@ def get_multiplier_bar(multiplier, max_val=10.0, length=10):
 async def resolve_match_bets(bot, match_id, actual_winner):
     """
     actual_winner: 'HOME_TEAM', 'AWAY_TEAM', or 'DRAW'
+    Returns: list of payouts if resolved now, None if already resolved, [] if resolved now but no bets.
     """
     # --- CANDADO DE SEGURIDAD ---
     # Si el partido ya aparece como FINISHED en la DB, no procesar de nuevo.
     if await database.is_match_resolved(match_id):
         print(f"⚠️ [SEGURIDAD] Intento de doble pago detectado para partido {match_id}. Abortando.")
-        return []
+        return None
+    
     bets = await database.get_active_bets_for_match(match_id)
     if not bets:
         await database.mark_all_bets_resolved_empty(match_id)
+        # Marcamos el partido como FINISHED para evitar que otros hilos intenten procesarlo
+        # Obtenemos info básica para el update
+        m_info = await database.get_match_by_id(match_id)
+        if m_info:
+            await database.add_or_update_match(match_id, m_info[1], m_info[2], 'FINISHED', actual_winner)
         return []
 
     # El pozo total incluye lo que apostó la gente + la inyección del bot
@@ -71,6 +78,11 @@ async def resolve_match_bets(bot, match_id, actual_winner):
                 'refunded': False,
                 'prediction': prediction
             })
+
+    # IMPORTANTE: Marcamos el partido como FINISHED inmediatamente después de procesar pagos
+    m_info = await database.get_match_by_id(match_id)
+    if m_info:
+        await database.add_or_update_match(match_id, m_info[1], m_info[2], 'FINISHED', actual_winner)
 
     return payouts
 

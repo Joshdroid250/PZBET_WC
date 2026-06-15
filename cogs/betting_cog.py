@@ -555,6 +555,8 @@ class Betting(commands.Cog):
                     if winner:
                         # 2. Resolver apuestas y actualizar DB
                         payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
+                        if payouts is None: continue # Ya fue procesado por otro hilo (ej: check_matches)
+
                         await betting.resolve_parlays_for_match(self.bot, m_id, winner)
                         await database.add_or_update_match(m_id, f_home, f_away, 'FINISHED', winner)
                         
@@ -813,10 +815,18 @@ class Betting(commands.Cog):
                     winner = match['score']['winner']
                     if winner:
                         payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
+                        if payouts is None: continue # Ya fue procesado por otro hilo (ej: fast_score_update)
+
                         channel = self.bot.get_channel(int(channel_id_env)) or await self.bot.fetch_channel(int(channel_id_env))
                         if channel:
+                            # Intentar obtener el marcador final
+                            score = "N/A"
+                            try:
+                                score = f"{match['score']['fullTime']['home']}-{match['score']['fullTime']['away']}"
+                            except: pass
+
                             winner_name = home if winner == 'HOME_TEAM' else away if winner == 'AWAY_TEAM' else "Empate"
-                            embed_res = discord.Embed(title=f"🏁 Resultado: {home} vs {away}", description=f"El ganador fue: **{winner_name}**", color=discord.Color.gold())
+                            embed_res = discord.Embed(title=f"🏁 Resultado: {home} vs {away}", description=f"El ganador fue: **{winner_name}** ({score})", color=discord.Color.gold())
                             summary = []
                             for p in payouts:
                                 user = self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])
