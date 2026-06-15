@@ -72,7 +72,7 @@ class General(commands.Cog):
     async def marcador(self, ctx):
         """Muestra los resultados actuales de los partidos en vivo (FIFA API)."""
         import api_football
-        data = await api_football.fetch_fifa_live_scores()
+        data = await api_football.fetch_fifa_live_scores(session=self.bot.session)
         
         matches = data.get('matches', []) if data else []
         

@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import aiohttp
 from dotenv import load_dotenv
 import database
 
@@ -12,12 +13,24 @@ PREFIX = os.getenv('BOT_PREFIX', '!')
 
 class BetBot(commands.Bot):
     def __init__(self):
+        # OPTIMIZACIÓN: Desactivar intents pesados (members) para ahorrar RAM en Railway.
+        # Si no necesitas rastrear a todos los miembros 24/7, dejar esto en False.
         intents = discord.Intents.default()
         intents.message_content = True
-        intents.members = True # REQUERIDO para el sistema de roles
-        super().__init__(command_prefix=PREFIX, intents=intents)
+        intents.members = False # Desactivado para ahorrar memoria
+        
+        # Desactivar caché de miembros explícitamente para mayor ahorro
+        super().__init__(
+            command_prefix=PREFIX, 
+            intents=intents,
+            chunk_guilds_at_startup=False
+        )
+        self.session = None
 
     async def setup_hook(self):
+        # OPTIMIZACIÓN: Sesión única de aiohttp para todas las peticiones (ahorra CPU y RAM)
+        self.session = aiohttp.ClientSession()
+        
         # Inicializar Base de Datos
         await database.init_db()
         print("Base de datos inicializada.")
@@ -34,6 +47,11 @@ class BetBot(commands.Bot):
                 print(f"Extensión {extension} cargada.")
             except Exception as e:
                 print(f"Error al cargar {extension}: {e}")
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+        await super().close()
 
     async def on_ready(self):
         await self.wait_until_ready()

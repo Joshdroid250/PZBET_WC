@@ -8,12 +8,13 @@ load_dotenv()
 
 BASE_URL = os.getenv('FIFA_API_BASE_URL', 'https://fifaapi-v7l1.onrender.com/v4')
 
-async def fetch_json(url, retries=2):
+async def fetch_json(url, session=None, retries=2):
     """Auxiliar para realizar peticiones GET asíncronas con reintentos para errores 500."""
-    for attempt in range(retries):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=10) as response:
+    internal_session = session if session else aiohttp.ClientSession()
+    try:
+        for attempt in range(retries):
+            try:
+                async with internal_session.get(url, timeout=10) as response:
                     if response.status == 200:
                         return await response.json()
                     elif response.status == 429:
@@ -29,39 +30,42 @@ async def fetch_json(url, retries=2):
                     else:
                         print(f"Error en API ({url}): {response.status}")
                         return None
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            if attempt == retries - 1:
-                print(f"📡 Error de conexión/tiempo en API: {e}")
-            await asyncio.sleep(1)
-            continue
-        except Exception as e:
-            print(f"❌ Error inesperado en fetch_json: {e}")
-            return None
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt == retries - 1:
+                    print(f"📡 Error de conexión/tiempo en API: {e}")
+                await asyncio.sleep(1)
+                continue
+            except Exception as e:
+                print(f"❌ Error inesperado en fetch_json: {e}")
+                return None
+    finally:
+        if not session:
+            await internal_session.close()
     return None
 
-async def get_upcoming_matches(competition='WC'):
+async def get_upcoming_matches(competition='WC', session=None):
     url = f'{BASE_URL}/competitions/{competition}/matches?status=SCHEDULED'
-    data = await fetch_json(url)
+    data = await fetch_json(url, session=session)
     return data.get('matches', []) if data else []
 
-async def get_match_details(match_id):
+async def get_match_details(match_id, session=None):
     url = f'{BASE_URL}/matches/{match_id}'
-    return await fetch_json(url)
+    return await fetch_json(url, session=session)
 
-async def get_finished_matches(competition='WC'):
+async def get_finished_matches(competition='WC', session=None):
     url = f'{BASE_URL}/competitions/{competition}/matches?status=FINISHED'
-    data = await fetch_json(url)
+    data = await fetch_json(url, session=session)
     return data.get('matches', []) if data else []
 
-async def fetch_fifa_live_scores():
+async def fetch_fifa_live_scores(session=None):
     """Consulta el endpoint especial de la FIFA para marcadores en tiempo real."""
     url = f"{BASE_URL}/competitions/WC/matches?status=LIVE"
-    return await fetch_json(url)
+    return await fetch_json(url, session=session)
 
-async def fetch_fifa_finished_matches():
+async def fetch_fifa_finished_matches(session=None):
     """Consulta el endpoint de la FIFA para partidos finalizados recientemente."""
     url = f"{BASE_URL}/competitions/WC/matches?status=FINISHED"
-    return await fetch_json(url)
+    return await fetch_json(url, session=session)
 
 def get_flag_emoji(country_name):
     mapping = {

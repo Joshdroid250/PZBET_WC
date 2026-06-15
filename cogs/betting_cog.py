@@ -7,9 +7,10 @@ import os
 import asyncio
 from datetime import datetime, timezone
 
-async def get_pozo_embed(match_id):
+async def get_pozo_embed(match_id, bot=None):
     """Helper para construir el Embed del pozo de forma consistente."""
-    match_info = await api_football.get_match_details(match_id)
+    session = bot.session if bot else None
+    match_info = await api_football.get_match_details(match_id, session=session)
     if not match_info:
         return None
 
@@ -41,7 +42,7 @@ async def get_pozo_embed(match_id):
     return embed
 
 class PozoMatchSelect(discord.ui.Select):
-    def __init__(self, matches):
+    def __init__(self, matches, bot):
         options = [
             discord.SelectOption(
                 label=f"{m[1]} vs {m[2]}",
@@ -50,19 +51,20 @@ class PozoMatchSelect(discord.ui.Select):
             ) for m in matches[:25]
         ]
         super().__init__(placeholder="Selecciona un partido para ver el pozo...", options=options)
+        self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
         match_id = str(self.values[0])
-        embed = await get_pozo_embed(match_id)
+        embed = await get_pozo_embed(match_id, bot=self.bot)
         if embed:
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message("❌ Error al obtener detalles del pozo.", ephemeral=True)
 
 class PozoMatchView(discord.ui.View):
-    def __init__(self, matches):
+    def __init__(self, matches, bot):
         super().__init__(timeout=120)
-        self.add_item(PozoMatchSelect(matches))
+        self.add_item(PozoMatchSelect(matches, bot))
 
 class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
     amount = discord.ui.TextInput(
@@ -72,11 +74,12 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         max_length=10,
     )
 
-    def __init__(self, match_id, team_name, prediction):
+    def __init__(self, match_id, team_name, prediction, bot):
         super().__init__()
         self.match_id = match_id
         self.team_name = team_name
         self.prediction = prediction
+        self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
@@ -104,7 +107,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             return
 
         # Verificar si el partido sigue abierto y no ha pasado del min 90
-        match_info = await api_football.get_match_details(self.match_id)
+        match_info = await api_football.get_match_details(self.match_id, session=self.bot.session)
         if not match_info or match_info['status'] == 'FINISHED':
             await interaction.response.send_message("❌ Este partido ya ha finalizado.", ephemeral=True)
             return
@@ -132,7 +135,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         except: pass
 
         # Obtener el pozo actualizado
-        embed_pozo = await get_pozo_embed(self.match_id)
+        embed_pozo = await get_pozo_embed(self.match_id, bot=self.bot)
         
         # Crear embed de confirmación personalizado
         home_team = match_info['homeTeam']['name']
@@ -148,16 +151,17 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
 
 class ParlayPozoView(discord.ui.View):
     """Vista para mostrar los pozos de un parlay de forma bajo demanda."""
-    def __init__(self, match_ids):
+    def __init__(self, match_ids, bot):
         super().__init__(timeout=120)
         self.match_ids = match_ids
+        self.bot = bot
 
     @discord.ui.button(label="🔍 Ver Pozos de mis Partidos", style=discord.ButtonStyle.secondary)
     async def view_pozos(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         embeds = []
         for m_id in self.match_ids:
-            embed = await get_pozo_embed(m_id)
+            embed = await get_pozo_embed(m_id, bot=self.bot)
             if embed:
                 embeds.append(embed)
         
@@ -175,9 +179,10 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         max_length=10,
     )
 
-    def __init__(self, legs):
+    def __init__(self, legs, bot):
         super().__init__()
         self.legs = legs # List of (match_id, prediction, home_name, away_name)
+        self.bot = bot
 
     async def on_submit(self, interaction: discord.Interaction):
         user_id = interaction.user.id
@@ -196,7 +201,7 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         match_ids = []
         for m_id, pred, home, away in self.legs:
             match_ids.append(m_id)
-            match_info = await api_football.get_match_details(m_id)
+            match_info = await api_football.get_match_details(m_id, session=self.bot.session)
             if not match_info: continue
             
             if match_info['status'] == 'FINISHED':
@@ -229,14 +234,15 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         embed.set_footer(text="¡Ganas si aciertas todas las predicciones!")
         
         # Opción B: Mostrar botón para ver pozos
-        view = ParlayPozoView(match_ids)
+        view = ParlayPozoView(match_ids, self.bot)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 class ParlayBuilderView(discord.ui.View):
-    def __init__(self, matches, user_id):
+    def __init__(self, matches, user_id, bot):
         super().__init__(timeout=300)
         self.matches = matches
         self.user_id = user_id
+        self.bot = bot
         self.selected_legs = [] # List of (match_id, prediction, home, away)
         self.add_item(ParlayMatchSelect(matches))
 
@@ -252,7 +258,7 @@ class ParlayBuilderView(discord.ui.View):
             await interaction.response.send_message("❌ Un parlay necesita al menos 2 partidos.", ephemeral=True)
             return
             
-        await interaction.response.send_modal(ParlayAmountModal(self.selected_legs))
+        await interaction.response.send_modal(ParlayAmountModal(self.selected_legs, self.bot))
 
     @discord.ui.button(label="❌ Cancelar", style=discord.ButtonStyle.danger, row=2)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -280,7 +286,7 @@ class ParlayMatchSelect(discord.ui.Select):
             return
 
         match_id = str(self.values[0])
-        match_info = await api_football.get_match_details(match_id)
+        match_info = await api_football.get_match_details(match_id, session=self.view.bot.session)
         
         home = match_info['homeTeam']['name']
         away = match_info['awayTeam']['name']
@@ -317,7 +323,7 @@ class ParlayMatchSelect(discord.ui.Select):
         await interaction.response.send_message(f"¿Qué resultado predices para **{home} vs {away}**?", view=view, ephemeral=True)
 
 class MatchSelect(discord.ui.Select):
-    def __init__(self, matches, user_id):
+    def __init__(self, matches, user_id, bot):
         options = [
             discord.SelectOption(
                 label=f"{m['homeTeam']['name']} vs {m['awayTeam']['name']}",
@@ -327,6 +333,7 @@ class MatchSelect(discord.ui.Select):
         ]
         super().__init__(placeholder="Selecciona un partido para apostar...", options=options)
         self.user_id = user_id
+        self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -334,7 +341,7 @@ class MatchSelect(discord.ui.Select):
             return
 
         match_id = str(self.values[0])
-        match_info = await api_football.get_match_details(match_id)
+        match_info = await api_football.get_match_details(match_id, session=self.bot.session)
         
         home = match_info['homeTeam']['name']
         away = match_info['awayTeam']['name']
@@ -357,7 +364,7 @@ class MatchSelect(discord.ui.Select):
         btn_cancel = discord.ui.Button(label="❌ Cancelar", style=discord.ButtonStyle.gray)
 
         async def make_bet_callback(inter, team, pred):
-            await inter.response.send_modal(BetModal(match_id, team, pred))
+            await inter.response.send_modal(BetModal(match_id, team, pred, self.bot))
 
         async def cancel_callback(inter):
             try:
@@ -379,12 +386,12 @@ class MatchSelect(discord.ui.Select):
         await interaction.response.edit_message(content=None, embed=embed, view=view)
 
 class BettingView(discord.ui.View):
-    def __init__(self, matches, user_id):
+    def __init__(self, matches, user_id, bot):
         super().__init__(timeout=180)
-        self.add_item(MatchSelect(matches, user_id))
+        self.add_item(MatchSelect(matches, user_id, bot))
 
 class CashoutSelect(discord.ui.Select):
-    def __init__(self, items, is_parlay=False, user_id=None):
+    def __init__(self, items, is_parlay=False, user_id=None, bot=None):
         options = []
         if not is_parlay:
             for home, away, amount, pred, m_id in items:
@@ -402,6 +409,7 @@ class CashoutSelect(discord.ui.Select):
                 ))
         super().__init__(placeholder="Elige la apuesta para cobrar (80% reembolso)...", options=options)
         self.user_id = user_id
+        self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -418,7 +426,7 @@ class CashoutSelect(discord.ui.Select):
         
         if prefix == 'ind':
             match_id = raw_id # Mantener como string para FIFA IDs
-            match_info = await api_football.get_match_details(match_id)
+            match_info = await api_football.get_match_details(match_id, session=self.bot.session)
             if match_info and match_info['status'] == 'FINISHED':
                 await interaction.response.send_message("❌ El partido ya terminó.", ephemeral=True)
                 return
@@ -444,9 +452,10 @@ class CashoutSelect(discord.ui.Select):
         await interaction.response.send_message(embed=discord.Embed(title="💰 Cashout Exitoso", description=f"Has recuperado **${return_amount:.2f}**.", color=discord.Color.gold()), ephemeral=True)
 
 class CashoutView(discord.ui.View):
-    def __init__(self, user_id):
+    def __init__(self, user_id, bot):
         super().__init__(timeout=120)
         self.user_id = user_id
+        self.bot = bot
 
     @discord.ui.button(label="Apuestas Individuales", style=discord.ButtonStyle.primary)
     async def individual(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -458,7 +467,7 @@ class CashoutView(discord.ui.View):
             await interaction.response.send_message("Sin apuestas activas.", ephemeral=True)
             return
         view = discord.ui.View()
-        view.add_item(CashoutSelect(bets, False, self.user_id))
+        view.add_item(CashoutSelect(bets, False, self.user_id, self.bot))
         await interaction.response.edit_message(content="Elige la apuesta:", view=view)
 
     @discord.ui.button(label="Parlays (Combinadas)", style=discord.ButtonStyle.secondary)
@@ -471,7 +480,7 @@ class CashoutView(discord.ui.View):
             await interaction.response.send_message("Sin parlays activos.", ephemeral=True)
             return
         view = discord.ui.View()
-        view.add_item(CashoutSelect(parlays, True, self.user_id))
+        view.add_item(CashoutSelect(parlays, True, self.user_id, self.bot))
         await interaction.response.edit_message(content="Elige el parlay:", view=view)
 
 class Betting(commands.Cog):
@@ -501,11 +510,11 @@ class Betting(commands.Cog):
             print(f"🔍 [DEBUG] Procesando {len(active_matches)} partidos activos...")
 
             # 1. Revisar partidos en vivo (LIVE)
-            data_live = await api_football.fetch_fifa_live_scores()
+            data_live = await api_football.fetch_fifa_live_scores(session=self.bot.session)
             fifa_live = data_live.get('matches', []) if data_live else []
             
             # 2. Revisar partidos terminados (FINISHED)
-            data_finished = await api_football.fetch_fifa_finished_matches()
+            data_finished = await api_football.fetch_fifa_finished_matches(session=self.bot.session)
             fifa_finished = data_finished.get('matches', []) if data_finished else []
             
             # Combinar para procesamiento
@@ -601,12 +610,12 @@ class Betting(commands.Cog):
     async def matches(self, ctx):
         """Lista los partidos próximos."""
         comp = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = await api_football.get_upcoming_matches(comp)
+        upcoming = await api_football.get_upcoming_matches(comp, session=self.bot.session)
         if not upcoming:
             await ctx.send("No hay partidos programados.", ephemeral=True)
             return
         embed = discord.Embed(title="⚽ Selección de Partidos", color=discord.Color.blue())
-        await ctx.send(embed=embed, view=BettingView(upcoming[:25], ctx.author.id), ephemeral=True)
+        await ctx.send(embed=embed, view=BettingView(upcoming[:25], ctx.author.id, self.bot), ephemeral=True)
 
     @commands.hybrid_command(name='apuestas')
     async def apuestas(self, ctx):
@@ -657,7 +666,7 @@ class Betting(commands.Cog):
     @commands.hybrid_command(name='cashout')
     async def cashout(self, ctx):
         """Retira una apuesta activa."""
-        await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id), ephemeral=True)
+        await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id, self.bot), ephemeral=True)
 
     @commands.hybrid_command(name='pozo', aliases=['p'])
     async def pozo(self, ctx, match_id: str = None):
@@ -669,10 +678,10 @@ class Betting(commands.Cog):
                 await ctx.send("❌ No hay partidos con apuestas activas en este momento. Usa `/pozo <id>` si conoces uno específico.", ephemeral=True)
                 return
             
-            await ctx.send("Selecciona un partido para ver el estado del pozo:", view=PozoMatchView(active_matches), ephemeral=True)
+            await ctx.send("Selecciona un partido para ver el estado del pozo:", view=PozoMatchView(active_matches, self.bot), ephemeral=True)
             return
 
-        embed = await get_pozo_embed(match_id)
+        embed = await get_pozo_embed(match_id, bot=self.bot)
         if not embed:
             await ctx.send("❌ No se encontró el partido.")
             return
@@ -684,22 +693,22 @@ class Betting(commands.Cog):
         """Mira partidos en juego actualmente y apuesta en vivo."""
         comp = os.getenv('COMPETITION_CODE', 'PL')
         url = f"{api_football.BASE_URL}/competitions/{comp}/matches?status=LIVE"
-        data = await api_football.fetch_json(url)
+        data = await api_football.fetch_json(url, session=self.bot.session)
         matches = data.get('matches', []) if data else []
         if not matches:
             await ctx.send("Sin partidos en vivo.", ephemeral=True)
             return
-        await ctx.send(embed=discord.Embed(title="🏟️ En Vivo", color=discord.Color.red()), view=BettingView(matches[:25], ctx.author.id), ephemeral=True)
+        await ctx.send(embed=discord.Embed(title="🏟️ En Vivo", color=discord.Color.red()), view=BettingView(matches[:25], ctx.author.id, self.bot), ephemeral=True)
 
     @commands.hybrid_command(name='parlay')
     async def parlay(self, ctx):
         """Crea un parlay (combinada)."""
         comp = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = await api_football.get_upcoming_matches(comp)
+        upcoming = await api_football.get_upcoming_matches(comp, session=self.bot.session)
         if not upcoming:
             await ctx.send("Sin partidos para parlay.", ephemeral=True)
             return
-        await ctx.send(embed=discord.Embed(title="🏗️ Constructor de Parlays"), view=ParlayBuilderView(upcoming, ctx.author.id), ephemeral=True)
+        await ctx.send(embed=discord.Embed(title="🏗️ Constructor de Parlays"), view=ParlayBuilderView(upcoming, ctx.author.id, self.bot), ephemeral=True)
 
     @commands.hybrid_command(name='mis_parlays')
     async def mis_parlays(self, ctx):
@@ -727,12 +736,12 @@ class Betting(commands.Cog):
             
             if not active_ids: return
             
-            fifa_data = await api_football.fetch_fifa_live_scores()
+            fifa_data = await api_football.fetch_fifa_live_scores(session=self.bot.session)
             fifa_live_ids = [str(m['id']) for m in fifa_data.get('matches', [])] if fifa_data else []
 
             matches = []
             for m_id in active_ids:
-                match = await api_football.get_match_details(m_id)
+                match = await api_football.get_match_details(m_id, session=self.bot.session)
                 if not match: continue
                 matches.append(match)
                 
@@ -768,7 +777,7 @@ class Betting(commands.Cog):
                             msg_id = live_info[0] if live_info else None
                             last_score = live_info[1] if live_info else None
                             
-                            embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {home} vs {away} {emoji_a}", description=f"Marcador Actual: **{score}**", color=discord.Color.red())
+                            embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} home vs away {emoji_a}", description=f"Marcador Actual: **{score}**", color=discord.Color.red())
                             
                             if msg_id:
                                 try:
