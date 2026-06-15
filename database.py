@@ -332,3 +332,10 @@ async def get_match_by_id(match_id):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute('SELECT match_id, home_team, away_team, status FROM matches WHERE match_id = ?', (str(match_id),)) as cursor:
             return await cursor.fetchone()
+
+async def is_match_resolved(match_id):
+    """Verifica si un partido ya ha sido marcado como FINISHED en la tabla matches."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT status FROM matches WHERE match_id = ?', (str(match_id),)) as cursor:
+            row = await cursor.fetchone()
+            return row and row[0] == 'FINISHED'

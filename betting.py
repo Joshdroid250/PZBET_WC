@@ -15,6 +15,11 @@ async def resolve_match_bets(bot, match_id, actual_winner):
     """
     actual_winner: 'HOME_TEAM', 'AWAY_TEAM', or 'DRAW'
     """
+    # --- CANDADO DE SEGURIDAD ---
+    # Si el partido ya aparece como FINISHED en la DB, no procesar de nuevo.
+    if await database.is_match_resolved(match_id):
+        print(f"⚠️ [SEGURIDAD] Intento de doble pago detectado para partido {match_id}. Abortando.")
+        return []
     bets = await database.get_active_bets_for_match(match_id)
     if not bets:
         await database.mark_all_bets_resolved_empty(match_id)
