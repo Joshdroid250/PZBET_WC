@@ -485,9 +485,9 @@ class Betting(commands.Cog):
         self.check_matches.cancel()
         self.fast_score_update.cancel()
 
-    @tasks.loop(seconds=15)
+    @tasks.loop(minutes=1)
     async def fast_score_update(self):
-        """Tarea de frecuencia moderada (15s) para actualizar marcadores y cerrar partidos."""
+        """Tarea de frecuencia moderada (1min) para actualizar marcadores y cerrar partidos."""
         try:
             channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
             if not channel_id_env: return
@@ -660,7 +660,7 @@ class Betting(commands.Cog):
         await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id), ephemeral=True)
 
     @commands.hybrid_command(name='pozo', aliases=['p'])
-    async def pozo(self, ctx, match_id: int = None):
+    async def pozo(self, ctx, match_id: str = None):
         """Muestra el volumen total y las cuotas actuales de un partido (Público)."""
         if match_id is None:
             # Modo interactivo: buscar partidos con apuestas o próximos
@@ -714,7 +714,7 @@ class Betting(commands.Cog):
             embed.add_field(name=f"ID: {p['id']} (${p['amount']:.2f})", value=text, inline=False)
         await ctx.send(embed=embed, ephemeral=True)
 
-    @tasks.loop(seconds=10)
+    @tasks.loop(minutes=1)
     async def check_matches(self):
         print("🔍 [DEBUG] Revisando partidos...")
         try:
@@ -730,7 +730,6 @@ class Betting(commands.Cog):
             fifa_data = await api_football.fetch_fifa_live_scores()
             fifa_live_ids = [str(m['id']) for m in fifa_data.get('matches', [])] if fifa_data else []
 
-            is_live, is_extra_time, earliest = False, False, None
             matches = []
             for m_id in active_ids:
                 match = await api_football.get_match_details(m_id)
@@ -744,30 +743,6 @@ class Betting(commands.Cog):
                         status = 'FINISHED'
                         match['status'] = 'FINISHED'
                         match['score'] = fifa_match['score']
-
-                if status in ['IN_PLAY', 'PAUSED', 'LIVE'] or str(m_id) in fifa_live_ids: 
-                    is_live = True
-                    start_dt = datetime.fromisoformat(match['utcDate'].replace('Z', '+00:00'))
-                    elapsed_mins = (now_utc - start_dt).total_seconds() / 60
-                    if elapsed_mins > 105: is_extra_time = True
-
-                dt = datetime.fromisoformat(match['utcDate'].replace('Z', '+00:00'))
-                if earliest is None or dt < earliest: earliest = dt
-
-            if not is_live:
-                if earliest and (earliest - now_utc).total_seconds() > 600:
-                    if not hasattr(self, '_loop_counter'): self._loop_counter = 0
-                    self._loop_counter += 1
-                    if self._loop_counter % 30 != 0: return
-                else:
-                    if not hasattr(self, '_loop_counter'): self._loop_counter = 0
-                    self._loop_counter += 1
-                    if self._loop_counter % 6 != 0: return
-            else:
-                if not is_extra_time:
-                    if not hasattr(self, '_loop_counter'): self._loop_counter = 0
-                    self._loop_counter += 1
-                    if self._loop_counter % 2 != 0: return
 
             for match in matches:
                 m_id, status = match['id'], match['status']
@@ -899,5 +874,11 @@ class Betting(commands.Cog):
                 print(f"Error al anunciar debug_resolve: {e}")
 
         await ctx.send(f"✅ Partido `{home_name} vs {away_name}` resuelto como `{winner}` y anunciado.", ephemeral=True)
+
+    @commands.command(name='debug_finalizar')
+    @commands.has_permissions(administrator=True)
+    async def debug_finalizar_prefix(self, ctx, match_id: str, winner: str):
+        """[ADMIN] Comando con prefijo (!) para forzar resolución manual."""
+        await self.debug_resolve(ctx, match_id, winner)
 
 async def setup(bot): await bot.add_cog(Betting(bot))
