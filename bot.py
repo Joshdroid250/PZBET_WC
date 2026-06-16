@@ -84,7 +84,7 @@ class BetBot(commands.Bot):
     @commands.command(name='sync')
     @commands.has_permissions(administrator=True)
     async def sync(self, ctx, scope: str = "guild"):
-        """Sincroniza los comandos de barra. Uso: !sync guild (recomendado) o !sync global."""
+        """Sincroniza los comandos de barra. Uso: !sync guild, !sync global o !sync clear."""
         if scope == "guild":
             await ctx.send(f"⏳ Sincronizando comandos localmente en **{ctx.guild.name}**...")
             try:
@@ -94,6 +94,14 @@ class BetBot(commands.Bot):
                 print(f"Sync local exitoso en {ctx.guild.name} ({ctx.guild.id})")
             except Exception as e:
                 await ctx.send(f"❌ Error local: `{e}`")
+        elif scope == "clear":
+            await ctx.send(f"🧹 Limpiando comandos locales en **{ctx.guild.name}**...")
+            try:
+                self.tree.clear_commands(guild=ctx.guild)
+                await self.tree.sync(guild=ctx.guild)
+                await ctx.send("✅ Comandos locales eliminados. Ahora solo deberían verse los globales (puede tardar unos minutos en refrescar en tu app de Discord).")
+            except Exception as e:
+                await ctx.send(f"❌ Error al limpiar: `{e}`")
         else:
             await ctx.send("⏳ Sincronizando comandos GLOBALMENTE (puede tardar hasta 1h)...")
             try:
