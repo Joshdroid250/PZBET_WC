@@ -101,9 +101,15 @@ async def get_all_active_match_ids():
             return [row[0] for row in rows]
 
 async def get_active_matches_with_names():
-    """Returns a list of (id, home, away) for all matches with active bets."""
+    """Returns a list of (id, home, away) for all matches with active bets OR parlay legs."""
     async with aiosqlite.connect(DB_PATH) as db:
-        query = 'SELECT DISTINCT m.match_id, m.home_team, m.away_team FROM matches m JOIN bets b ON m.match_id = b.match_id WHERE b.resolved = 0'
+        query = '''
+            SELECT DISTINCT m.match_id, m.home_team, m.away_team 
+            FROM matches m 
+            LEFT JOIN bets b ON m.match_id = b.match_id AND b.resolved = 0
+            LEFT JOIN parlay_legs pl ON m.match_id = pl.match_id AND pl.status = 'PENDING'
+            WHERE b.bet_id IS NOT NULL OR pl.leg_id IS NOT NULL
+        '''
         async with db.execute(query) as cursor:
             return await cursor.fetchall()
 

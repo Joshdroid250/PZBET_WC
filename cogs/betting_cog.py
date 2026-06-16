@@ -521,7 +521,7 @@ class Betting(commands.Cog):
                 channel = self.bot.get_channel(c_id) or await self.bot.fetch_channel(c_id)
 
             for internal_match in active_matches_db:
-                m_id, home_db, away_db, _ = internal_match
+                m_id, home_db, away_db = internal_match
                 
                 # Buscar el partido correspondiente en la respuesta de la API
                 f_match = next((m for m in all_fifa_matches if str(m['id']) == str(m_id)), None)

@@ -25,6 +25,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         self.bot.session = AsyncMock()
         self.bot.get_channel = MagicMock()
         self.bot.fetch_channel = AsyncMock()
+        self.bot.wait_until_ready = AsyncMock() # Fix: must be awaitable
         self.channel = AsyncMock()
         self.bot.get_channel.return_value = self.channel
         self.bot.fetch_channel.return_value = self.channel
@@ -63,18 +64,27 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
 
         # 3. Simular que el primer partido termina 1-0 ganando Spain
         import api_football
-        api_football.get_match_details = AsyncMock(return_value={
-            'id': match_id,
-            'homeTeam': {'name': home},
-            'awayTeam': {'name': away},
-            'status': 'FINISHED',
-            'utcDate': '2026-06-15T20:00:00Z',
-            'score': {'winner': 'HOME_TEAM', 'fullTime': {'home': 1, 'away': 0}}
+        api_football.fetch_json = AsyncMock(return_value={
+            'matches': [
+                {
+                    'id': match_id,
+                    'homeTeam': {'name': home},
+                    'awayTeam': {'name': away},
+                    'status': 'FINISHED',
+                    'score': {'winner': 'HOME_TEAM', 'fullTime': {'home': 1, 'away': 0}}
+                },
+                {
+                    'id': match_b_id,
+                    'homeTeam': {'name': "France"},
+                    'awayTeam': {'name': "Italy"},
+                    'status': 'SCHEDULED', # Todavía no termina
+                    'score': {'winner': None, 'fullTime': {'home': 0, 'away': 0}}
+                }
+            ]
         })
-        api_football.fetch_fifa_live_scores = AsyncMock(return_value={'matches': []})
 
         print("\n--- Resolviendo Partido 1 (Spain vs Germany 1-0) ---")
-        await self.cog.check_matches()
+        await self.cog.match_processor()
 
         # Verificar cobro de apuesta individual:
         # User pool: 50. Winning pool: 50. Total effective (inc 50 house): 100.
@@ -88,14 +98,14 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         found_score = False
         for call in self.channel.send.call_args_list:
             embed = call.kwargs.get('embed')
-            if embed and "Resultado:" in embed.title and "(1-0)" in embed.description:
+            if embed and "Finalizado:" in embed.title and "(1-0)" in embed.description:
                 found_score = True
         self.assertTrue(found_score, "El marcador (1-0) no aparece en el anuncio de resultado")
 
         # 4. Intentar resolver el mismo partido OTRA VEZ (Simular duplicado)
         print("--- Intento duplicado de resolución ---")
         self.channel.send.reset_mock()
-        await self.cog.check_matches()
+        await self.cog.match_processor()
         
         # No debería haber nuevos anuncios ni cambios en el balance
         final_balance_1 = await database.get_user_balance(user_id)
@@ -104,17 +114,27 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         print("✅ Candado de duplicidad funcionó: Ni pagos ni mensajes extra.")
 
         # 5. Resolver el segundo partido para cerrar el Parlay
-        api_football.get_match_details = AsyncMock(return_value={
-            'id': match_b_id,
-            'homeTeam': {'name': "France"},
-            'awayTeam': {'name': "Italy"},
-            'status': 'FINISHED',
-            'utcDate': '2026-06-15T22:00:00Z',
-            'score': {'winner': 'AWAY_TEAM', 'fullTime': {'home': 1, 'away': 2}}
+        api_football.fetch_json = AsyncMock(return_value={
+            'matches': [
+                {
+                    'id': match_id,
+                    'homeTeam': {'name': home},
+                    'awayTeam': {'name': away},
+                    'status': 'FINISHED',
+                    'score': {'winner': 'HOME_TEAM', 'fullTime': {'home': 1, 'away': 0}}
+                },
+                {
+                    'id': match_b_id,
+                    'homeTeam': {'name': "France"},
+                    'awayTeam': {'name': "Italy"},
+                    'status': 'FINISHED',
+                    'score': {'winner': 'AWAY_TEAM', 'fullTime': {'home': 1, 'away': 2}}
+                }
+            ]
         })
 
         print("\n--- Resolviendo Partido 2 (France vs Italy 1-2) ---")
-        await self.cog.check_matches()
+        await self.cog.match_processor()
 
         # El parlay tenía 2 piernas. Pago: 20 * (2^2) = 80.
         # Balance final: 130 + 80 = 210.
