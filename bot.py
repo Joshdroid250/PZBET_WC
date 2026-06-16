@@ -48,6 +48,16 @@ class BetBot(commands.Bot):
             except Exception as e:
                 print(f"Error al cargar {extension}: {e}")
 
+        # --- LIMPIEZA AUTOMÁTICA DE DUPLICADOS ---
+        # Al reiniciar, el bot se sincronizará globalmente una sola vez.
+        # Esto es lo que Discord recomienda para producción.
+        print("Sincronizando comandos globales...")
+        try:
+            await self.tree.sync()
+            print("Comandos globales sincronizados.")
+        except Exception as e:
+            print(f"Error en sync global: {e}")
+
     async def close(self):
         if self.session:
             await self.session.close()
@@ -63,52 +73,46 @@ class BetBot(commands.Bot):
         if message.author.bot:
             return
 
-        # Mecanismo de emergencia: Sincronización por mención
-        # Si mencionas al bot y escribes "sync", se sincronizará localmente
+        # Mecanismo de emergencia mejorado: Sincronización limpia
         if self.user.mentioned_in(message) and "sync" in message.content.lower():
             if message.author.guild_permissions.administrator:
-                await message.channel.send(f"🔄 **Sincronización de emergencia detectada.** Sincronizando en {message.guild.name}...")
-                try:
-                    self.tree.copy_global_to(guild=message.guild)
-                    synced = await self.tree.sync(guild=message.guild)
-                    await message.channel.send(f"✅ ¡Éxito! {len(synced)} comandos sincronizados localmente.")
-                except Exception as e:
-                    await message.channel.send(f"❌ Error: {e}")
+                if "clear" in message.content.lower():
+                    await message.channel.send(f"🧹 **Limpiando comandos locales** en {message.guild.name}...")
+                    self.tree.clear_commands(guild=message.guild)
+                    await self.tree.sync(guild=message.guild)
+                    await message.channel.send("✅ Limpieza completada. Usa solo los globales.")
+                else:
+                    await message.channel.send(f"🔄 **Sincronizando GLOBALMENTE**...")
+                    try:
+                        synced = await self.tree.sync()
+                        await message.channel.send(f"✅ ¡Éxito! {len(synced)} comandos sincronizados globalmente.")
+                    except Exception as e:
+                        await message.channel.send(f"❌ Error: {e}")
             else:
                 await message.channel.send("❌ Solo administradores pueden usar la sincronización.")
-            return # Detener procesamiento para evitar que intente ejecutarlo como comando prefix también
+            return
 
-        # Procesar otros comandos con prefijo (!) normalmente
         await self.process_commands(message)
 
-    @commands.command(name='sync')
+    @commands.hybrid_command(name='sync')
     @commands.has_permissions(administrator=True)
-    async def sync(self, ctx, scope: str = "guild"):
-        """Sincroniza los comandos de barra. Uso: !sync guild, !sync global o !sync clear."""
-        if scope == "guild":
-            await ctx.send(f"⏳ Sincronizando comandos localmente en **{ctx.guild.name}**...")
-            try:
-                self.tree.copy_global_to(guild=ctx.guild)
-                synced = await self.tree.sync(guild=ctx.guild)
-                await ctx.send(f"✅ Sincronización LOCAL completa. {len(synced)} comandos listos para usar en este servidor.")
-                print(f"Sync local exitoso en {ctx.guild.name} ({ctx.guild.id})")
-            except Exception as e:
-                await ctx.send(f"❌ Error local: `{e}`")
-        elif scope == "clear":
-            await ctx.send(f"🧹 Limpiando comandos locales en **{ctx.guild.name}**...")
+    async def sync(self, ctx, scope: str = "global"):
+        """Sincroniza los comandos de barra. Uso: !sync global o !sync clear."""
+        if scope == "clear":
+            await ctx.send(f"🧹 Limpiando comandos locales en **{ctx.guild.name}**...", ephemeral=True)
             try:
                 self.tree.clear_commands(guild=ctx.guild)
                 await self.tree.sync(guild=ctx.guild)
-                await ctx.send("✅ Comandos locales eliminados. Ahora solo deberían verse los globales (puede tardar unos minutos en refrescar en tu app de Discord).")
+                await ctx.send("✅ Comandos locales eliminados. Reinicia tu Discord si sigues viendo duplicados.", ephemeral=True)
             except Exception as e:
-                await ctx.send(f"❌ Error al limpiar: `{e}`")
+                await ctx.send(f"❌ Error al limpiar: `{e}`", ephemeral=True)
         else:
-            await ctx.send("⏳ Sincronizando comandos GLOBALMENTE (puede tardar hasta 1h)...")
+            await ctx.send("⏳ Sincronizando comandos GLOBALMENTE...", ephemeral=True)
             try:
                 synced = await self.tree.sync()
-                await ctx.send(f"✅ Sincronización GLOBAL completa. {len(synced)} comandos registrados en Discord.")
+                await ctx.send(f"✅ Sincronización GLOBAL completa. {len(synced)} comandos registrados.", ephemeral=True)
             except Exception as e:
-                await ctx.send(f"❌ Error global: `{e}`")
+                await ctx.send(f"❌ Error global: `{e}`", ephemeral=True)
 
 async def main():
     bot = BetBot()
