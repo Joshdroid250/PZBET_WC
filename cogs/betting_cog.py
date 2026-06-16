@@ -533,7 +533,9 @@ class Betting(commands.Cog):
                 f_away = f_match['awayTeam']['name']
                 f_score = f"{f_match['score']['fullTime']['home']}-{f_match['score']['fullTime']['away']}"
                 
-                print(f"⚽ [LOG] {f_home} {f_score} {f_away} ({f_status})")
+                # Calcular minuto para el log
+                f_minute = api_football.calculate_match_minute(f_match['utcDate'])
+                print(f"⚽ [LOG] {f_home} {f_score} {f_away} ({f_status}) - Min: {f_minute:.1f}'")
 
                 # --- CASO A: PARTIDO FINALIZADO ---
                 if f_status == 'FINISHED':
@@ -598,6 +600,166 @@ class Betting(commands.Cog):
     @match_processor.before_loop
     async def before_match_processor(self):
         await self.bot.wait_until_ready()
+
+    @commands.hybrid_command(name='matches')
+    async def matches(self, ctx):
+        """Muestra los próximos partidos disponibles para apostar."""
+        await ctx.defer(ephemeral=True)
+        upcoming = await api_football.get_upcoming_matches(session=self.bot.session)
+        if not upcoming:
+            await ctx.send("⚽ No hay partidos próximos programados en este momento.", ephemeral=True)
+            return
+        
+        view = BettingView(upcoming[:25], ctx.author.id, self.bot)
+        embed = discord.Embed(title="📅 Próximos Partidos", description="Selecciona un partido para realizar tu apuesta.", color=discord.Color.blue())
+        await ctx.send(embed=embed, view=view, ephemeral=True)
+
+    @commands.hybrid_command(name='apuestas')
+    async def apuestas(self, ctx):
+        """Muestra tus apuestas individuales activas."""
+        await ctx.defer(ephemeral=True)
+        bets = await database.get_user_active_bets(ctx.author.id)
+        if not bets:
+            await ctx.send("📝 No tienes apuestas individuales activas.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title="📋 Tus Apuestas Activas", color=discord.Color.blue())
+        for home, away, amount, pred, m_id in bets:
+            pred_display = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            embed.add_field(
+                name=f"{home} vs {away}",
+                value=f"Apostado: **${amount:.2f}**\nPredicción: **{pred_display}**\nID: `{m_id}`",
+                inline=False
+            )
+        await ctx.send(embed=embed, ephemeral=True)
+
+    @commands.hybrid_command(name='parlay')
+    async def parlay(self, ctx):
+        """Crea una apuesta combinada (Parlay) para aumentar tus ganancias."""
+        await ctx.defer(ephemeral=True)
+        upcoming = await api_football.get_upcoming_matches(session=self.bot.session)
+        if not upcoming or len(upcoming) < 2:
+            await ctx.send("⚽ Se necesitan al menos 2 partidos próximos para crear un parlay.", ephemeral=True)
+            return
+        
+        view = ParlayBuilderView(upcoming[:25], ctx.author.id, self.bot)
+        embed = discord.Embed(
+            title="🏗️ Creador de Parlays", 
+            description="Selecciona al menos 2 partidos. ¡Debes acertar todos para ganar!", 
+            color=discord.Color.gold()
+        )
+        await ctx.send(embed=embed, view=view, ephemeral=True)
+
+    @commands.hybrid_command(name='mis_parlays')
+    async def mis_parlays(self, ctx):
+        """Muestra tus parlays (apuestas combinadas) activos."""
+        await ctx.defer(ephemeral=True)
+        parlays = await database.get_user_active_parlays(ctx.author.id)
+        if not parlays:
+            await ctx.send("🚀 No tienes parlays activos.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title="🚀 Tus Parlays Activos", color=discord.Color.gold())
+        for p in parlays:
+            legs_text = ""
+            for home, away, pred, status in p['legs']:
+                res_icon = "⏳" if status == 'PENDING' else "✅" if status == 'WON' else "❌"
+                pred_text = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+                legs_text += f"{res_icon} **{home} vs {away}**: {pred_text}\n"
+            
+            embed.add_field(
+                name=f"Parlay #{p['id']} - Monto: ${p['amount']:.2f}",
+                value=legs_text or "Sin detalles",
+                inline=False
+            )
+        await ctx.send(embed=embed, ephemeral=True)
+
+    @commands.hybrid_command(name='cashout')
+    async def cashout(self, ctx):
+        """Cancela una apuesta activa y recupera el 80% de lo invertido."""
+        view = CashoutView(ctx.author.id, self.bot)
+        await ctx.send("💰 **Menú de Cashout**: ¿Qué tipo de apuesta deseas retirar?", view=view, ephemeral=True)
+
+    @commands.hybrid_command(name='vivo')
+    async def vivo(self, ctx):
+        """Muestra los partidos que se están jugando ahora y permite apostar."""
+        await ctx.defer(ephemeral=True)
+        live_data = await api_football.fetch_fifa_live_scores(session=self.bot.session)
+        matches = live_data.get('matches', []) if live_data else []
+        
+        if not matches:
+            await ctx.send("⚽ No hay partidos en vivo disponibles para apostar en este momento.", ephemeral=True)
+            return
+        
+        view = BettingView(matches[:25], ctx.author.id, self.bot)
+        embed = discord.Embed(
+            title="🏟️ Partidos EN VIVO", 
+            description="Estos partidos ya empezaron pero aún puedes apostar hasta el minuto 90.", 
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed, view=view, ephemeral=True)
+
+    @commands.hybrid_command(name='pozo')
+    async def pozo(self, ctx, match_id: str = None):
+        """Consulta el estado del pozo y las cuotas de un partido."""
+        await ctx.defer(ephemeral=True)
+        if match_id:
+            embed = await get_pozo_embed(match_id, bot=self.bot)
+            if embed:
+                await ctx.send(embed=embed, ephemeral=True)
+            else:
+                await ctx.send(f"❌ No se encontró información para el partido `{match_id}`.", ephemeral=True)
+        else:
+            # Mostrar lista de partidos activos en la DB
+            active = await database.get_active_matches_with_names()
+            if not active:
+                await ctx.send("📊 No hay pozos activos con apuestas en este momento.", ephemeral=True)
+                return
+            
+            view = PozoMatchView(active, self.bot)
+            await ctx.send("📊 Selecciona un partido para ver su pozo actual:", view=view, ephemeral=True)
+
+    @commands.hybrid_command(name='historial')
+    async def historial(self, ctx):
+        """Muestra tus últimas 10 apuestas resueltas."""
+        await ctx.defer(ephemeral=True)
+        history = await database.get_user_history(ctx.author.id)
+        if not history:
+            await ctx.send("📜 Aún no tienes un historial de apuestas resueltas.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title="📜 Tu Historial de Apuestas", color=discord.Color.purple())
+        for home, away, amount, pred, payout, won, winner in history:
+            icon = "✅" if won else "❌"
+            res_text = f"Ganaste: **${payout:.2f}**" if won else "Perdiste"
+            pred_text = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            embed.add_field(
+                name=f"{icon} {home} vs {away}",
+                value=f"Apostaste: `${amount:.2f}` a **{pred_text}**\n{res_text}",
+                inline=False
+            )
+        await ctx.send(embed=embed, ephemeral=True)
+
+    @commands.hybrid_command(name='historial_all')
+    async def historial_all(self, ctx):
+        """Muestra las últimas apuestas resueltas de todos los usuarios."""
+        await ctx.defer(ephemeral=True)
+        history = await database.get_global_history(15)
+        if not history:
+            await ctx.send("📜 No hay historial global disponible.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title="🌎 Historial Global de Apuestas", color=discord.Color.purple())
+        for u_id, home, away, amount, pred, payout, won, winner in history:
+            user = self.bot.get_user(u_id)
+            name = user.name if user else f"Usuario {u_id}"
+            icon = "✅" if won else "❌"
+            embed.add_field(
+                name=f"{icon} {name}",
+                value=f"**{home} vs {away}**\n${amount:.2f} -> ${payout:.2f}",
+                inline=True
+            )
+        await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='debug_resolve')
     @commands.has_permissions(administrator=True)
