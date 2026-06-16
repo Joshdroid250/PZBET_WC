@@ -486,362 +486,118 @@ class CashoutView(discord.ui.View):
 class Betting(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self._last_check_time = 0
-        self.check_matches.start()
-        self.fast_score_update.start()
+        # Consolidado: Una sola tarea que revisa todo cada minuto
+        self.match_processor.start()
 
     def cog_unload(self):
-        self.check_matches.cancel()
-        self.fast_score_update.cancel()
+        self.match_processor.cancel()
 
     @tasks.loop(minutes=1)
-    async def fast_score_update(self):
-        """Tarea de frecuencia moderada (1min) para actualizar marcadores y cerrar partidos."""
+    async def match_processor(self):
+        """Tarea UNIFICADA para actualizar marcadores y resolver partidos."""
         try:
+            # 1. Obtener partidos con apuestas activas
+            active_matches_db = await database.get_active_matches_with_names()
+            if not active_matches_db:
+                return
+
+            print(f"🔍 [PROCESSOR] Revisando {len(active_matches_db)} partidos activos...")
+
+            # 2. ÚNICA CONSULTA A LA API: Obtener todos los partidos de la competición
+            # Para ahorrar llamadas, traemos todos los de la competición configurada
+            comp = os.getenv('COMPETITION_CODE', 'WC')
+            url_all = f"{api_football.BASE_URL}/competitions/{comp}/matches"
+            data_all = await api_football.fetch_json(url_all, session=self.bot.session)
+            
+            if not data_all or 'matches' not in data_all:
+                print("⚠️ No se pudo obtener la lista de partidos de la API.")
+                return
+
+            all_fifa_matches = data_all['matches']
             channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
-            if not channel_id_env: return
+            channel = None
+            if channel_id_env:
+                c_id = int(str(channel_id_env).strip().strip('"').strip("'"))
+                channel = self.bot.get_channel(c_id) or await self.bot.fetch_channel(c_id)
 
-            # Obtener partidos con apuestas activas y sus nombres
-            active_matches = await database.get_active_matches_with_names()
-            if not active_matches: 
-                # print("DEBUG: No hay apuestas activas en este ciclo.")
-                return
+            for internal_match in active_matches_db:
+                m_id, home_db, away_db, _ = internal_match
+                
+                # Buscar el partido correspondiente en la respuesta de la API
+                f_match = next((m for m in all_fifa_matches if str(m['id']) == str(m_id)), None)
+                if not f_match:
+                    continue
 
-            print(f"🔍 [DEBUG] Procesando {len(active_matches)} partidos activos...")
-
-            # 1. Revisar partidos en vivo (LIVE)
-            data_live = await api_football.fetch_fifa_live_scores(session=self.bot.session)
-            fifa_live = data_live.get('matches', []) if data_live else []
-            
-            # 2. Revisar partidos terminados (FINISHED)
-            data_finished = await api_football.fetch_fifa_finished_matches(session=self.bot.session)
-            fifa_finished = data_finished.get('matches', []) if data_finished else []
-            
-            # Combinar para procesamiento
-            all_fifa = fifa_live + fifa_finished
-            if not all_fifa: 
-                print("DEBUG: La API de la FIFA no devolvió partidos LIVE ni FINISHED.")
-                return
-
-            channel_id = int(str(channel_id_env).strip().strip('"').strip("'"))
-            channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
-            if not channel: return
-
-            for f_match in all_fifa:
+                f_status = f_match['status']
                 f_home = f_match['homeTeam']['name']
                 f_away = f_match['awayTeam']['name']
                 f_score = f"{f_match['score']['fullTime']['home']}-{f_match['score']['fullTime']['away']}"
-                f_status = f_match['status']
                 
-                # Buscar si este partido de FIFA coincide con uno de nuestros partidos apostados
-                # Intentamos primero por ID (más preciso) y luego por nombre si falla
-                internal_match = next((m for m in active_matches if str(m[0]) == str(f_match['id'])), None)
-                if not internal_match:
-                    internal_match = next((m for m in active_matches if m[1] == f_home and m[2] == f_away), None)
-                
-                if not internal_match: continue
+                print(f"⚽ [LOG] {f_home} {f_score} {f_away} ({f_status})")
 
-                m_id = internal_match[0]
-                print(f"⚽ [UPDATE] {f_home} {f_score} {f_away} ({f_status})")
-                
-                # Si el partido ha terminado en la FIFA API, forzar resolución
+                # --- CASO A: PARTIDO FINALIZADO ---
                 if f_status == 'FINISHED':
-                    print(f"🏁 [CIERRE RÁPIDO - FIFA API] {f_home} vs {f_away} detectado como FINISHED.")
-                    
-                    # 1. Obtener info del mensaje ANTES de actualizar/resolver (evita que se pierda la referencia)
-                    live_info = await database.get_live_msg_info(m_id)
-                    
                     winner = f_match['score']['winner']
                     if winner:
-                        # 2. Resolver apuestas y actualizar DB
+                        # Resolver y pagar
                         payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
-                        if payouts is None: continue # Ya fue procesado por otro hilo (ej: check_matches)
+                        if payouts is None: continue # Ya resuelto
 
                         await betting.resolve_parlays_for_match(self.bot, m_id, winner)
                         await database.add_or_update_match(m_id, f_home, f_away, 'FINISHED', winner)
-                        
-                        # 3. Limpiar mensaje en vivo usando la info guardada
-                        if live_info and live_info[0]:
+
+                        # Limpiar marcador en vivo
+                        live_info = await database.get_live_msg_info(m_id)
+                        if live_info and live_info[0] and channel:
                             try:
                                 msg = await channel.fetch_message(live_info[0])
                                 await msg.delete()
                                 await database.update_live_msg_info(m_id, None, None)
-                                print(f"🗑️ [MSG] Marcador borrado (Cierre Rápido): {f_home} vs {f_away}")
-                            except Exception as e:
-                                print(f"⚠️ No se pudo borrar el mensaje {live_info[0]}: {e}")
-                        
-                        # Anuncio de resultado
-                        winner_name = f_home if winner == 'HOME_TEAM' else f_away if winner == 'AWAY_TEAM' else "Empate"
-                        embed_res = discord.Embed(title=f"🏁 Finalizado: {f_home} vs {f_away}", description=f"El ganador fue: **{winner_name}** ({f_score})", color=discord.Color.gold())
-                        summary = []
-                        for p in payouts:
-                            user = self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])
-                            name = user.mention if user else f"Usuario {p['user_id']}"
-                            res_icon = "✅" if p['won'] else "❌"
-                            summary.append(f"{res_icon} {name}: ${p['payout']:.2f}")
-                        if summary: embed_res.add_field(name="Resumen de Cobros", value="\n".join(summary), inline=False)
-                        await channel.send(embed=embed_res)
-                    continue
-
-                # Si sigue en vivo, actualizar marcador
-                live_info = await database.get_live_msg_info(m_id)
-                if not live_info: continue 
-                
-                msg_id = live_info[0]
-                last_score = live_info[1]
-
-                if msg_id:
-                    if f_score != last_score:
-                        try:
-                            msg = await channel.fetch_message(msg_id)
-                            emoji_h = api_football.get_flag_emoji(f_home)
-                            emoji_a = api_football.get_flag_emoji(f_away)
-                            embed = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {f_home} vs {f_away} {emoji_a}", description=f"Marcador Actual: **{f_score}**", color=discord.Color.red())
-                            await msg.edit(embed=embed)
-                            await database.update_live_msg_info(m_id, msg_id, f_score)
-                            print(f"⚽ [GOL DETECTADO - FIFA API] {f_home} {f_score} {f_away} | ID Interno: {m_id}")
-                        except: pass
-        except Exception as e:
-            print(f"Error en fast_score_update: {e}")
-
-    @fast_score_update.before_loop
-    async def before_fast_score_update(self):
-        await self.bot.wait_until_ready()
-
-    @commands.hybrid_command(name='matches')
-    async def matches(self, ctx):
-        """Lista los partidos próximos."""
-        comp = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = await api_football.get_upcoming_matches(comp, session=self.bot.session)
-        if not upcoming:
-            await ctx.send("No hay partidos programados.", ephemeral=True)
-            return
-        embed = discord.Embed(title="⚽ Selección de Partidos", color=discord.Color.blue())
-        await ctx.send(embed=embed, view=BettingView(upcoming[:25], ctx.author.id, self.bot), ephemeral=True)
-
-    @commands.hybrid_command(name='apuestas')
-    async def apuestas(self, ctx):
-        """Muestra tus apuestas actuales que aún no se han resuelto."""
-        user_id = ctx.author.id
-        user_bets = await database.get_user_active_bets(user_id)
-        if not user_bets:
-            await ctx.send("No tienes apuestas activas.", ephemeral=True)
-            return
-        embed = discord.Embed(title="📝 Tus Apuestas Activas", color=discord.Color.blue())
-        for home, away, amount, pred, m_id in user_bets:
-            total_bets, pools = await database.get_match_pools(m_id)
-            total_pool = total_bets + betting.HOUSE_INJECTION
-            pred_pool = pools.get(pred, 0)
-            multiplier = min(10.0, total_pool / pred_pool if pred_pool > 0 else 1.0)
-            pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-            embed.add_field(name=f"{home} vs {away}", value=f"**Monto:** ${amount:.2f}\n**Predicción:** {pred_name}\n**Cuota:** x{multiplier:.2f}", inline=False)
-        await ctx.send(embed=embed, ephemeral=True)
-
-    @commands.hybrid_command(name='historial')
-    async def historial(self, ctx):
-        """Mira tus apuestas pasadas."""
-        history = await database.get_user_history(ctx.author.id)
-        if not history:
-            await ctx.send("Historial vacío.", ephemeral=True)
-            return
-        embed = discord.Embed(title="📜 Tu Historial", color=discord.Color.blue())
-        for home, away, amount, pred, payout, won, winner in history:
-            status = "✅ GANADA" if won else "❌ PERDIDA"
-            pred_name = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
-            embed.add_field(name=f"{home} vs {away}", value=f"{status} | Apostado: ${amount:.2f} | Ganado: ${payout:.2f}\nPred: {pred_name}", inline=False)
-        await ctx.send(embed=embed, ephemeral=True)
-
-    @commands.hybrid_command(name='historial_all')
-    async def historial_all(self, ctx):
-        """Historial de todos los usuarios."""
-        history = await database.get_global_history(15)
-        if not history:
-            await ctx.send("Sin historial global.", ephemeral=True)
-            return
-        embed = discord.Embed(title="🌍 Historial Global", color=discord.Color.dark_blue())
-        for u_id, home, away, amount, pred, payout, won, winner in history:
-            user = self.bot.get_user(u_id) or await self.bot.fetch_user(u_id)
-            name = user.name if user else f"ID:{u_id}"
-            embed.add_field(name=f"👤 {name} | {home} vs {away}", value=f"Ganancia: ${payout:.2f}", inline=False)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name='cashout')
-    async def cashout(self, ctx):
-        """Retira una apuesta activa."""
-        await ctx.send("Selecciona qué tipo de apuesta quieres retirar:", view=CashoutView(ctx.author.id, self.bot), ephemeral=True)
-
-    @commands.hybrid_command(name='pozo', aliases=['p'])
-    async def pozo(self, ctx, match_id: str = None):
-        """Muestra el volumen total y las cuotas actuales de un partido (Público)."""
-        if match_id is None:
-            # Modo interactivo: buscar partidos con apuestas o próximos
-            active_matches = await database.get_active_matches_with_names()
-            if not active_matches:
-                await ctx.send("❌ No hay partidos con apuestas activas en este momento. Usa `/pozo <id>` si conoces uno específico.", ephemeral=True)
-                return
-            
-            await ctx.send("Selecciona un partido para ver el estado del pozo:", view=PozoMatchView(active_matches, self.bot), ephemeral=True)
-            return
-
-        embed = await get_pozo_embed(match_id, bot=self.bot)
-        if not embed:
-            await ctx.send("❌ No se encontró el partido.")
-            return
-
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name='vivo')
-    async def vivo(self, ctx):
-        """Mira partidos en juego actualmente y apuesta en vivo."""
-        comp = os.getenv('COMPETITION_CODE', 'PL')
-        url = f"{api_football.BASE_URL}/competitions/{comp}/matches?status=LIVE"
-        data = await api_football.fetch_json(url, session=self.bot.session)
-        matches = data.get('matches', []) if data else []
-        if not matches:
-            await ctx.send("Sin partidos en vivo.", ephemeral=True)
-            return
-        await ctx.send(embed=discord.Embed(title="🏟️ En Vivo", color=discord.Color.red()), view=BettingView(matches[:25], ctx.author.id, self.bot), ephemeral=True)
-
-    @commands.hybrid_command(name='parlay')
-    async def parlay(self, ctx):
-        """Crea un parlay (combinada)."""
-        comp = os.getenv('COMPETITION_CODE', 'PL')
-        upcoming = await api_football.get_upcoming_matches(comp, session=self.bot.session)
-        if not upcoming:
-            await ctx.send("Sin partidos para parlay.", ephemeral=True)
-            return
-        await ctx.send(embed=discord.Embed(title="🏗️ Constructor de Parlays"), view=ParlayBuilderView(upcoming, ctx.author.id, self.bot), ephemeral=True)
-
-    @commands.hybrid_command(name='mis_parlays')
-    async def mis_parlays(self, ctx):
-        """Tus parlays activos."""
-        parlays = await database.get_user_active_parlays(ctx.author.id)
-        if not parlays:
-            await ctx.send("Sin parlays activos.", ephemeral=True)
-            return
-        embed = discord.Embed(title="🚀 Tus Parlays", color=discord.Color.gold())
-        for p in parlays:
-            text = "\n".join([f"{'✅' if s=='WON' else '❌' if s=='LOST' else '⏳'} {h} vs {a}" for h,a,pr,s in p['legs']])
-            embed.add_field(name=f"ID: {p['id']} (${p['amount']:.2f})", value=text, inline=False)
-        await ctx.send(embed=embed, ephemeral=True)
-
-    @tasks.loop(minutes=1)
-    async def check_matches(self):
-        print("🔍 [DEBUG] Revisando partidos...")
-        try:
-            now_utc = datetime.now(timezone.utc)
-            active_ids = await database.get_all_active_match_ids()
-            parlay_ids = await database.get_active_parlay_ids()
-            for p_id in parlay_ids:
-                for m_id, _, s in await database.get_parlay_legs(p_id):
-                    if s == 'PENDING' and m_id not in active_ids: active_ids.append(m_id)
-            
-            if not active_ids: return
-            
-            fifa_data = await api_football.fetch_fifa_live_scores(session=self.bot.session)
-            fifa_live_ids = [str(m['id']) for m in fifa_data.get('matches', [])] if fifa_data else []
-
-            matches = []
-            for m_id in active_ids:
-                match = await api_football.get_match_details(m_id, session=self.bot.session)
-                if not match: continue
-                matches.append(match)
-                
-                status = match['status']
-                fifa_match = next((m for m in (fifa_data.get('matches', []) if fifa_data else []) if str(m['id']) == str(m_id)), None)
-                if status != 'FINISHED' and fifa_match:
-                    if fifa_match['status'] in ['FINISHED', 'TIMED', 'FT']:
-                        status = 'FINISHED'
-                        match['status'] = 'FINISHED'
-                        match['score'] = fifa_match['score']
-
-            for match in matches:
-                m_id, status = match['id'], match['status']
-                home, away = match['homeTeam']['name'], match['awayTeam']['name']
-                
-                match_minute = api_football.calculate_match_minute(match['utcDate'])
-                print(f"📌 [LOG] {home} vs {away} | Estado: {status} | Minuto: {match_minute:.1f}'")
-                
-                channel_id_env = os.getenv('ANNOUNCEMENT_CHANNEL_ID')
-                if channel_id_env and status in ['IN_PLAY', 'PAUSED', 'LIVE']:
-                    try:
-                        channel_id = int(str(channel_id_env).strip().strip('"').strip("'"))
-                        channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
-
-                        if channel:
-                            this_fifa = next((m for m in (fifa_data.get('matches', []) if fifa_data else []) if str(m['id']) == str(m_id)), None)
-                            score = f"{this_fifa['score']['fullTime']['home']}-{this_fifa['score']['fullTime']['away']}" if this_fifa else f"{match['score']['fullTime']['home']}-{match['score']['fullTime']['away']}"
-                            
-                            emoji_h = api_football.get_flag_emoji(home)
-                            emoji_a = api_football.get_flag_emoji(away)
-                            
-                            live_info = await database.get_live_msg_info(m_id)
-                            msg_id = live_info[0] if live_info else None
-                            last_score = live_info[1] if live_info else None
-                            
-                            embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {home} vs {away} {emoji_a}", description=f"Marcador Actual: **{score}**", color=discord.Color.red())
-                            
-                            if msg_id:
-                                try:
-                                    msg = await channel.fetch_message(msg_id)
-                                    if score != last_score:
-                                        await msg.edit(embed=embed_live)
-                                        await database.update_live_msg_info(m_id, msg_id, score)
-                                        print(f"📝 [MSG] Marcador editado: {home} {score} {away}")
-                                    else:
-                                        print(f"⏱️ [MSG] Marcador sin cambios ({score}).")
-                                except discord.NotFound:
-                                    new_msg = await channel.send(embed=embed_live)
-                                    await database.update_live_msg_info(m_id, new_msg.id, score)
-                                    print(f"📣 [MSG] Marcador recreado: {home} vs {away}")
-                                except Exception: pass
-                            else:
-                                new_msg = await channel.send(embed=embed_live)
-                                await database.update_live_msg_info(m_id, new_msg.id, score)
-                                print(f"📣 [MSG] Nuevo marcador enviado: {home} vs {away}")
-                    except Exception: pass
-
-                if status == 'FINISHED':
-                    live_info = await database.get_live_msg_info(m_id)
-                    if live_info and live_info[0]:
-                        try:
-                            channel = self.bot.get_channel(int(channel_id_env)) or await self.bot.fetch_channel(int(channel_id_env))
-                            msg = await channel.fetch_message(live_info[0])
-                            await msg.delete()
-                            await database.update_live_msg_info(m_id, None, None)
-                            print(f"🗑️ [MSG] Marcador borrado: {home} vs {away}")
-                        except: pass
-                    
-                    winner = match['score']['winner']
-                    if winner:
-                        payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
-                        if payouts is None: continue # Ya fue procesado por otro hilo (ej: fast_score_update)
-
-                        channel = self.bot.get_channel(int(channel_id_env)) or await self.bot.fetch_channel(int(channel_id_env))
-                        if channel:
-                            # Intentar obtener el marcador final
-                            score = "N/A"
-                            try:
-                                score = f"{match['score']['fullTime']['home']}-{match['score']['fullTime']['away']}"
                             except: pass
 
-                            winner_name = home if winner == 'HOME_TEAM' else away if winner == 'AWAY_TEAM' else "Empate"
-                            embed_res = discord.Embed(title=f"🏁 Resultado: {home} vs {away}", description=f"El ganador fue: **{winner_name}** ({score})", color=discord.Color.gold())
-                            summary = []
-                            for p in payouts:
-                                user = self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])
-                                name = user.mention if user else f"Usuario {p['user_id']}"
-                                res_icon = "✅" if p['won'] else "❌"
-                                summary.append(f"{res_icon} {name}: ${p['payout']:.2f}")
+                        # Anunciar resultado
+                        if channel:
+                            winner_display = f_home if winner == 'HOME_TEAM' else f_away if winner == 'AWAY_TEAM' else "Empate"
+                            embed_res = discord.Embed(title=f"🏁 Finalizado: {f_home} vs {f_away}", description=f"El ganador fue: **{winner_display}** ({f_score})", color=discord.Color.gold())
+                            summary = [f"{'✅' if p['won'] else '❌'} {(self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])).mention}: ${p['payout']:.2f}" for p in payouts]
                             if summary: embed_res.add_field(name="Resumen de Cobros", value="\n".join(summary), inline=False)
                             await channel.send(embed=embed_res)
-                            print(f"📢 [MSG] Anuncio enviado: {home} vs {away}")
-                        await betting.resolve_parlays_for_match(self.bot, m_id, winner)
-                        await database.add_or_update_match(m_id, home, away, status, winner)
-        except Exception as e: print(f"ERROR: {e}")
+                    continue
 
-    @check_matches.before_loop
-    async def before_check_matches(self): await self.bot.wait_until_ready()
+                # --- CASO B: PARTIDO EN VIVO ---
+                if f_status in ['IN_PLAY', 'PAUSED', 'LIVE']:
+                    if not channel: continue
+                    
+                    live_info = await database.get_live_msg_info(m_id)
+                    msg_id = live_info[0] if live_info else None
+                    last_score = live_info[1] if live_info else None
+
+                    emoji_h = api_football.get_flag_emoji(f_home)
+                    emoji_a = api_football.get_flag_emoji(f_away)
+                    embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {f_home} vs {f_away} {emoji_a}", description=f"Marcador Actual: **{f_score}**", color=discord.Color.red())
+
+                    if msg_id:
+                        if f_score != last_score:
+                            try:
+                                msg = await channel.fetch_message(msg_id)
+                                await msg.edit(embed=embed_live)
+                                await database.update_live_msg_info(m_id, msg_id, f_score)
+                                print(f"📝 Marcador editado: {f_home} {f_score} {f_away}")
+                            except discord.NotFound:
+                                new_msg = await channel.send(embed=embed_live)
+                                await database.update_live_msg_info(m_id, new_msg.id, f_score)
+                            except: pass
+                    else:
+                        new_msg = await channel.send(embed=embed_live)
+                        await database.update_live_msg_info(m_id, new_msg.id, f_score)
+                        print(f"📣 Nuevo marcador enviado: {f_home} vs {f_away}")
+
+        except Exception as e:
+            print(f"Error en match_processor: {e}")
+
+    @match_processor.before_loop
+    async def before_match_processor(self):
+        await self.bot.wait_until_ready()
 
     @commands.hybrid_command(name='debug_resolve')
     @commands.has_permissions(administrator=True)
