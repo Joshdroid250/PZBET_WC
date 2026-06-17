@@ -492,7 +492,7 @@ class Betting(commands.Cog):
     def cog_unload(self):
         self.match_processor.cancel()
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(seconds=10)
     async def match_processor(self):
         """Tarea UNIFICADA para actualizar marcadores y resolver partidos."""
         try:
