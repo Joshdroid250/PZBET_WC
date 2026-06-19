@@ -140,8 +140,8 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         # Crear embed de confirmación personalizado
         home_team = match_info['homeTeam']['name']
         away_team = match_info['awayTeam']['name']
-        home_emoji = api_football.get_flag_emoji(home_team)
-        away_emoji = api_football.get_flag_emoji(away_team)
+        home_emoji = api_football.get_team_flag_emoji(match_info['homeTeam'])
+        away_emoji = api_football.get_team_flag_emoji(match_info['awayTeam'])
 
         confirm_embed = discord.Embed(title="✅ Apuesta Confirmada", color=discord.Color.green())
         confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}"
@@ -345,15 +345,15 @@ class MatchSelect(discord.ui.Select):
         
         home = match_info['homeTeam']['name']
         away = match_info['awayTeam']['name']
-        home_emoji = api_football.get_flag_emoji(home)
-        away_emoji = api_football.get_flag_emoji(away)
+        home_emoji = api_football.get_team_flag_emoji(match_info['homeTeam'])
+        away_emoji = api_football.get_team_flag_emoji(match_info['awayTeam'])
         
         embed = discord.Embed(
             title=f"🏆 {home_emoji} {home} vs {away} {away_emoji}",
             description=f"Estado: **{match_info['status']}**\nID: `{match_id}`",
             color=discord.Color.green()
         )
-        flag = api_football.get_flag_url(home)
+        flag = api_football.get_team_flag_url(match_info['homeTeam'])
         if flag:
             embed.set_thumbnail(url=flag)
         
@@ -574,8 +574,8 @@ class Betting(commands.Cog):
                     msg_id = live_info[0] if live_info else None
                     last_score = live_info[1] if live_info else None
 
-                    emoji_h = api_football.get_flag_emoji(f_home)
-                    emoji_a = api_football.get_flag_emoji(f_away)
+                    emoji_h = api_football.get_team_flag_emoji(f_match['homeTeam'])
+                    emoji_a = api_football.get_team_flag_emoji(f_match['awayTeam'])
                     embed_live = discord.Embed(title=f"🏟️ EN VIVO: {emoji_h} {f_home} vs {f_away} {emoji_a}", description=f"Marcador Actual: **{f_score}**", color=discord.Color.red())
 
                     if msg_id:

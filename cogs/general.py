@@ -91,8 +91,8 @@ class General(commands.Cog):
             away = m['awayTeam']['name']
             score_home = m['score']['fullTime']['home']
             score_away = m['score']['fullTime']['away']
-            emoji_home = api_football.get_flag_emoji(home)
-            emoji_away = api_football.get_flag_emoji(away)
+            emoji_home = api_football.get_team_flag_emoji(m['homeTeam'])
+            emoji_away = api_football.get_team_flag_emoji(m['awayTeam'])
             
             embed.add_field(
                 name=f"{emoji_home} {home} vs {away} {emoji_away}",

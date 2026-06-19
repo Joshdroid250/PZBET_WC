@@ -91,6 +91,35 @@ def get_flag_url(country_name):
         return f"https://flagcdn.com/w160/{code}.png"
     return None
 
+def get_flag_emoji_by_tla(tla):
+    mapping = {
+        'ARG': 'Argentina', 'BRA': 'Brazil', 'FRA': 'France', 'ESP': 'Spain', 'GER': 'Germany',
+        'POR': 'Portugal', 'ENG': 'England', 'MEX': 'Mexico', 'USA': 'USA', 'NED': 'Netherlands',
+        'BEL': 'Belgium', 'CRO': 'Croatia', 'MAR': 'Morocco', 'JPN': 'Japan', 'KOR': 'South Korea',
+        'CAN': 'Canada', 'AUS': 'Australia', 'URU': 'Uruguay', 'PAR': 'Paraguay', 'ECU': 'Ecuador',
+        'SUI': 'Switzerland', 'DEN': 'Denmark', 'POL': 'Poland', 'KSA': 'Saudi Arabia',
+        'ITA': 'Italy', 'SWE': 'Sweden', 'UKR': 'Ukraine', 'WAL': 'Wales', 'SCO': 'Scotland'
+    }
+    country_name = mapping.get((tla or '').upper())
+    return get_flag_emoji(country_name) if country_name else None
+
+def get_team_flag_emoji(team):
+    if not team:
+        return get_flag_emoji(None)
+    if team.get('name') == 'Korea Republic':
+        return get_flag_emoji('South Korea')
+    return get_flag_emoji_by_tla(team.get('tla')) or get_flag_emoji(team.get('name'))
+
+def get_team_flag_url(team):
+    if not team:
+        return None
+    crest = team.get('crest')
+    if crest:
+        return crest.replace('{format}', 'png').replace('{size}', 'w160')
+    if team.get('name') == 'Korea Republic':
+        return get_flag_url('South Korea')
+    return get_flag_url(team.get('name'))
+
 def calculate_match_minute(utc_date_str):
     try:
         now_utc = datetime.now(timezone.utc)
