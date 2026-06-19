@@ -416,6 +416,8 @@ class CashoutSelect(discord.ui.Select):
             await interaction.response.send_message("No puedes cobrar las apuestas de otros.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         user_id = interaction.user.id
         val_parts = self.values[0].split('_')
         prefix = val_parts[0]
@@ -427,14 +429,22 @@ class CashoutSelect(discord.ui.Select):
         if prefix == 'ind':
             match_id = raw_id # Mantener como string para FIFA IDs
             match_info = await api_football.get_match_details(match_id, session=self.bot.session)
+            if not match_info:
+                await interaction.followup.send("No se pudo verificar el estado del partido. Intenta de nuevo en unos segundos.", ephemeral=True)
+                return
             if match_info and match_info['status'] == 'FINISHED':
-                await interaction.response.send_message("❌ El partido ya terminó.", ephemeral=True)
+                await interaction.followup.send("❌ El partido ya terminó.", ephemeral=True)
                 return
             
             # Bloqueo minuto 90 para cashout
-            match_minute = api_football.calculate_match_minute(match_info['utcDate'])
+            utc_date = match_info.get('utcDate')
+            if not utc_date:
+                await interaction.followup.send("No se pudo calcular el minuto del partido. Cashout no disponible por ahora.", ephemeral=True)
+                return
+
+            match_minute = api_football.calculate_match_minute(utc_date)
             if match_minute >= 90:
-                await interaction.response.send_message("🔒 **Mercado Suspendido**: El partido está terminando. Cashout deshabilitado.", ephemeral=True)
+                await interaction.followup.send("🔒 **Mercado Suspendido**: El partido está terminando. Cashout deshabilitado.", ephemeral=True)
                 return
 
             await database.remove_bet(user_id, match_id)
@@ -449,7 +459,7 @@ class CashoutSelect(discord.ui.Select):
             await interaction.message.edit(content="✅ Cashout completado.", view=None, embed=None)
         except: pass
 
-        await interaction.response.send_message(embed=discord.Embed(title="💰 Cashout Exitoso", description=f"Has recuperado **${return_amount:.2f}**.", color=discord.Color.gold()), ephemeral=True)
+        await interaction.followup.send(embed=discord.Embed(title="💰 Cashout Exitoso", description=f"Has recuperado **${return_amount:.2f}**.", color=discord.Color.gold()), ephemeral=True)
 
 class CashoutView(discord.ui.View):
     def __init__(self, user_id, bot):
