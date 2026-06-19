@@ -8,6 +8,9 @@ if MOUNT_PATH != '.' and not os.path.exists(MOUNT_PATH):
 
 DB_PATH = os.path.join(MOUNT_PATH, 'betbot.db')
 
+def round_money(value):
+    return round(float(value), 2)
+
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('''
@@ -84,8 +87,9 @@ async def init_db():
 
 async def place_parlay(user_id, amount, legs):
     """legs is a list of (match_id, prediction)"""
+    amount = round_money(amount)
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('UPDATE users SET balance = balance - ? WHERE user_id = ?', (amount, user_id))
+        await db.execute('UPDATE users SET balance = ROUND(balance - ?, 2) WHERE user_id = ?', (amount, user_id))
         async with db.execute('INSERT INTO parlays (user_id, amount) VALUES (?, ?)', (user_id, amount)) as cursor:
             parlay_id = cursor.lastrowid
             for match_id, prediction in legs:
@@ -133,6 +137,7 @@ async def update_parlay_leg_status(parlay_id, match_id, status):
         await db.commit()
 
 async def resolve_parlay(parlay_id, payout, won):
+    payout = round_money(payout)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE parlays SET resolved = 1, payout = ?, won = ? WHERE parlay_id = ?', 
                         (payout, won, parlay_id))
@@ -142,7 +147,7 @@ async def resolve_parlay(parlay_id, payout, won):
                 row = await cursor.fetchone()
                 if row:
                     user_id = row[0]
-                    await db.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (payout, user_id))
+                    await db.execute('UPDATE users SET balance = ROUND(balance + ?, 2) WHERE user_id = ?', (payout, user_id))
         await db.commit()
 
 async def get_user_active_parlays(user_id):
@@ -192,14 +197,16 @@ async def register_user(user_id):
         await db.commit()
 
 async def update_balance(user_id, amount):
+    amount = round_money(amount)
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('UPDATE users SET balance = balance + ? WHERE user_id = ?', (amount, user_id))
+        await db.execute('UPDATE users SET balance = ROUND(balance + ?, 2) WHERE user_id = ?', (amount, user_id))
         await db.commit()
 
 async def place_bet(user_id, match_id, amount, prediction):
+    amount = round_money(amount)
     async with aiosqlite.connect(DB_PATH) as db:
         # Deduct balance first
-        await db.execute('UPDATE users SET balance = balance - ? WHERE user_id = ?', (amount, user_id))
+        await db.execute('UPDATE users SET balance = ROUND(balance - ?, 2) WHERE user_id = ?', (amount, user_id))
         # Insert bet
         await db.execute('''
             INSERT INTO bets (user_id, match_id, amount, prediction)
@@ -254,6 +261,7 @@ async def remove_parlay(user_id, parlay_id):
         await db.commit()
 
 async def mark_bet_resolved(match_id, user_id, payout, won):
+    payout = round_money(payout)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('''
             UPDATE bets 
@@ -305,8 +313,18 @@ async def get_global_history(limit=15):
 
 async def give_daily_bonus(amount, threshold=0.0):
     """Gives a bonus to all users whose balance is below or equal to the threshold."""
+    amount = round_money(amount)
+    threshold = round_money(threshold)
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('UPDATE users SET balance = balance + ? WHERE balance <= ?', (amount, threshold))
+        await db.execute('UPDATE users SET balance = ROUND(balance + ?, 2) WHERE ROUND(balance, 2) <= ?', (amount, threshold))
+        await db.commit()
+
+async def normalize_money_values():
+    """Rounds stored monetary values to two decimals without deleting rows."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('UPDATE users SET balance = ROUND(balance, 2)')
+        await db.execute('UPDATE bets SET payout = ROUND(payout, 2)')
+        await db.execute('UPDATE parlays SET payout = ROUND(payout, 2)')
         await db.commit()
 
 async def get_match_pools(match_id):

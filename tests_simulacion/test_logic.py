@@ -85,9 +85,9 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
     async def test_daily_bonus_persistence(self):
         user_id = 12345
         await database.register_user(user_id)
-        # Forzar balance a 0
+        # Forzar balance que se muestra como 0.00 pero antes no calificaba para bono
         async with database.aiosqlite.connect(database.DB_PATH) as db:
-            await db.execute('UPDATE users SET balance = 0.0 WHERE user_id = ?', (user_id,))
+            await db.execute('UPDATE users SET balance = 0.001213073538650633 WHERE user_id = ?', (user_id,))
             await db.commit()
             
         # Dar bono

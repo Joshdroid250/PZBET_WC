@@ -50,7 +50,7 @@ async def resolve_match_bets(bot, match_id, actual_winner):
 
         for user_id, amount, prediction in bets:
             is_winner = (prediction == actual_winner)
-            winnings = amount * payout_ratio if is_winner else 0
+            winnings = database.round_money(amount * payout_ratio) if is_winner else 0.0
             
             if is_winner:
                 await database.update_balance(user_id, winnings)
@@ -130,7 +130,7 @@ async def resolve_parlays_for_match(bot, match_id, winner):
                         async with db.execute('SELECT amount, user_id FROM parlays WHERE parlay_id = ?', (p_id,)) as cursor:
                             row = await cursor.fetchone()
                             amt, p_user_id = row
-                    payout = amt * (2 ** len(all_legs))
+                    payout = database.round_money(amt * (2 ** len(all_legs)))
                     await database.resolve_parlay(p_id, payout, True)
                     print(f"DEBUG: Parlay {p_id} marcado como GANADO. Pago: ${payout}")
 
