@@ -39,7 +39,7 @@ DISCORD_TOKEN=tu_token_aquí
 BOT_PREFIX=!
 ANNOUNCEMENT_CHANNEL_ID=id_del_canal_de_goles
 COMPETITION_CODE=WC
-FIFA_API_BASE_URL=https://fifaapi-v7l1.onrender.com/v4
+FIFA_API_BASE_URL=
 ```
 
 ## 📂 Estructura del Proyecto
