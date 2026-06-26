@@ -87,11 +87,11 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         await self.cog.match_processor()
 
         # Verificar cobro de apuesta individual:
-        # User pool: 50. Winning pool: 50. Total effective (inc 50 house): 100.
-        # Multiplicador: 100/50 = 2.0x. Pago: 50 * 2.0 = 100.
-        # Balance: 30 + 100 = 130.
+        # User pool: 50. Winning pool: 50. Total effective (inc 150 house): 200.
+        # Multiplicador: 200/50 = 4.0x. Pago: 50 * 4.0 = 200.
+        # Balance: 30 + 200 = 230.
         balance_after_1 = await database.get_user_balance(user_id)
-        self.assertEqual(balance_after_1, 130.0)
+        self.assertEqual(balance_after_1, 230.0)
         print(f"✅ Apuesta individual pagada. Balance: {balance_after_1}")
 
         # Verificar que el mensaje de resultado tiene el marcador
@@ -109,7 +109,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         
         # No debería haber nuevos anuncios ni cambios en el balance
         final_balance_1 = await database.get_user_balance(user_id)
-        self.assertEqual(final_balance_1, 130.0)
+        self.assertEqual(final_balance_1, 230.0)
         self.assertEqual(self.channel.send.call_count, 0)
         print("✅ Candado de duplicidad funcionó: Ni pagos ni mensajes extra.")
 
@@ -137,9 +137,9 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         await self.cog.match_processor()
 
         # El parlay tenía 2 piernas. Pago: 20 * (2^2) = 80.
-        # Balance final: 130 + 80 = 210.
+        # Balance final: 230 + 80 = 310.
         final_balance = await database.get_user_balance(user_id)
-        self.assertEqual(final_balance, 210.0)
+        self.assertEqual(final_balance, 310.0)
         print(f"✅ Parlay pagado. Balance final: {final_balance}")
 
         # Verificar anuncio de parlay

@@ -40,7 +40,7 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bets[0][1], 50.0)
 
     async def test_resolve_match_winners(self):
-        # Inyección de la casa es 50.0 por defecto
+        # Inyección de la casa es 150.0 por defecto
         user1, user2 = 1, 2
         match_id = 101
         await database.register_user(user1)
@@ -55,14 +55,14 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         mock_bot = MagicMock()
         mock_bot.guilds = []
         
-        # Pool Total = 60 + 40 + 50 (House) = 150.0
-        # Winner is HOME_TEAM. User 1 should get all 150.0.
+        # Pool Total = 60 + 40 + 150 (House) = 250.0
+        # Winner is HOME_TEAM. User 1 should get all 250.0.
         await betting.resolve_match_bets(mock_bot, match_id, "HOME_TEAM")
         
         balance1 = await database.get_user_balance(user1)
         balance2 = await database.get_user_balance(user2)
         
-        self.assertEqual(balance1, 190.0)
+        self.assertEqual(balance1, 290.0)
         self.assertEqual(balance2, 60.0)
 
     async def test_no_refund_if_no_winners(self):
