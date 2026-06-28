@@ -8,7 +8,6 @@ import aiohttp
 BASE_URL = os.getenv('KALSHI_BASE_URL', 'https://external-api.kalshi.com/trade-api/v2')
 ENABLED = os.getenv('KALSHI_ODDS_ENABLED', '0').lower() in ('1', 'true', 'yes', 'on')
 MIN_CONFIDENCE = float(os.getenv('KALSHI_MATCH_MIN_CONFIDENCE', '0.72'))
-MAX_MULTIPLIER = float(os.getenv('MAX_MULTIPLIER', '10.0'))
 MIN_MULTIPLIER = float(os.getenv('MIN_MULTIPLIER', '1.01'))
 SERIES_TICKER = os.getenv('KALSHI_SERIES_TICKER', 'KXWCGAME')
 CATEGORY = os.getenv('KALSHI_CATEGORY')
@@ -53,7 +52,7 @@ def _price_to_multiplier(price):
         return None
     if probability <= 0:
         return None
-    return round(max(MIN_MULTIPLIER, min(MAX_MULTIPLIER, 1.0 / probability)), 2)
+    return round(max(MIN_MULTIPLIER, 1.0 / probability), 2)
 
 
 def _market_yes_price(market):

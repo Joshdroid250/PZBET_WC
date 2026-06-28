@@ -475,6 +475,7 @@ async def get_kalshi_embed(match_info, bot):
 
 class KalshiMatchSelect(discord.ui.Select):
     def __init__(self, matches, user_id, bot):
+        self.matches_by_id = {str(m['id']): m for m in matches}
         options = [
             discord.SelectOption(
                 label=f"{m['homeTeam']['name']} vs {m['awayTeam']['name']}",
@@ -494,6 +495,8 @@ class KalshiMatchSelect(discord.ui.Select):
         await interaction.response.defer(ephemeral=True)
         match_id = str(self.values[0])
         match_info = await api_football.get_match_details(match_id, session=self.bot.session)
+        if not match_info:
+            match_info = self.matches_by_id.get(match_id)
         if not match_info:
             await interaction.followup.send("No se pudo obtener el partido seleccionado.", ephemeral=True)
             return
@@ -758,6 +761,26 @@ class Betting(commands.Cog):
             color=discord.Color.green()
         )
         await ctx.send(embed=embed, view=view, ephemeral=True)
+
+    @commands.hybrid_command(name='kalshivivo')
+    async def kalshivivo(self, ctx):
+        """Consulta multiplicadores Kalshi para partidos en vivo."""
+        await ctx.defer(ephemeral=True)
+        live_data = await api_football.fetch_fifa_live_scores(session=self.bot.session)
+        matches = live_data.get('matches', []) if live_data else []
+
+        if not matches:
+            await ctx.send("No hay partidos en vivo disponibles para consultar en Kalshi.", ephemeral=True)
+            return
+
+        view = KalshiMatchView(matches[:25], ctx.author.id, self.bot)
+        embed = discord.Embed(
+            title="Consulta Kalshi En Vivo",
+            description="Selecciona un partido en vivo para ver los multiplicadores disponibles.",
+            color=discord.Color.red()
+        )
+        await ctx.send(embed=embed, view=view, ephemeral=True)
+
     @commands.hybrid_command(name='apuestas')
     async def apuestas(self, ctx):
         """Muestra tus apuestas individuales activas."""

@@ -105,7 +105,7 @@ class TestKalshiOddsMatching(unittest.TestCase):
         self.assertEqual(away['market_ticker'], 'KXWCGAME-26JUN27JORARG-ARG')
         self.assertEqual(away['multiplier'], 1.01)
         self.assertEqual(draw['market_ticker'], 'KXWCGAME-26JUN27JORARG-TIE')
-        self.assertEqual(draw['multiplier'], 10.0)
+        self.assertEqual(draw['multiplier'], 100.0)
 
     def test_get_multipliers_from_same_event_set(self):
         async def run():

@@ -19,8 +19,9 @@ PZBET es un bot de Discord para apuestas deportivas de futbol con soporte para c
 1. Kalshi es la fuente principal cuando esta disponible.
 2. Si Kalshi responde y no encuentra mercado para la seleccion, la apuesta no se registra en el pozo local.
 3. El pozo local solo entra cuando Kalshi no esta disponible.
-4. La cuota final se congela al apostar y se muestra como `Fuente: Kalshi` o `Fuente: Pozo local`.
-5. `/kalshi` es solo informativo; la cuota oficial de la apuesta se fija cuando el usuario confirma el monto.
+4. Las cuotas de Kalshi se usan libres, sin cap local de multiplicador.
+5. La cuota final se congela al apostar y se muestra como `Fuente: Kalshi` o `Fuente: Pozo local`.
+6. `/kalshi` es solo informativo; la cuota oficial de la apuesta se fija cuando el usuario confirma el monto.
 
 ## Comandos principales
 
@@ -28,6 +29,7 @@ PZBET es un bot de Discord para apuestas deportivas de futbol con soporte para c
 - `/balance`: muestra el balance.
 - `/matches`: lista partidos disponibles para apostar.
 - `/kalshi`: consulta multiplicadores Kalshi por partido.
+- `/kalshivivo`: consulta multiplicadores Kalshi de partidos en vivo.
 - `/apuestas`: muestra apuestas activas.
 - `/parlay`: crea una apuesta combinada.
 - `/mis_parlays`: muestra parlays activos.
@@ -94,6 +96,7 @@ Variables opcionales:
 - `KALSHI_CATEGORY`: filtro adicional de categoria si se necesita.
 - `FIFA_API_BASE_URL`: solo configurarla en el entorno de despliegue si se usa un endpoint personalizado.
 - `KALSHI_BASE_URL`: solo configurarla en el entorno de despliegue si se necesita sobrescribir el endpoint por defecto.
+- `MAX_MULTIPLIER`: cap del pozo local; no limita multiplicadores de Kalshi.
 
 ## Sincronizacion de comandos
 
