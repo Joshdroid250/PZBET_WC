@@ -101,9 +101,10 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             await interaction.response.send_message("❌ La cantidad debe ser mayor a 0.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
         balance = await database.get_user_balance(user_id)
         if balance is None:
-            await interaction.response.send_message("❌ No estás registrado. Usa `/join` primero.", ephemeral=True)
+            await interaction.followup.send("❌ No estás registrado. Usa `/join` primero.", ephemeral=True)
             return
 
         # Redondear a 2 decimales para evitar problemas de precisión float (ej: 0.489999 vs 0.49)
@@ -111,19 +112,19 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         amount_rounded = round(amount_val, 2)
 
         if balance_rounded < (amount_rounded - 0.0001):
-            await interaction.response.send_message(f"❌ Saldo insuficiente. Tienes **${balance:.2f}**.", ephemeral=True)
+            await interaction.followup.send(f"❌ Saldo insuficiente. Tienes **${balance:.2f}**.", ephemeral=True)
             return
 
         # Verificar si el partido sigue abierto y no ha pasado del min 90
         match_info = await api_football.get_match_details(self.match_id, session=self.bot.session)
         if not match_info or match_info['status'] == 'FINISHED':
-            await interaction.response.send_message("❌ Este partido ya ha finalizado.", ephemeral=True)
+            await interaction.followup.send("❌ Este partido ya ha finalizado.", ephemeral=True)
             return
 
         # --- Candado de Seguridad Minuto 90 ---
         match_minute = api_football.calculate_match_minute(match_info['utcDate'])
         if match_minute >= 90:
-            await interaction.response.send_message("🔒 **Mercado Suspendido**: El partido está en tiempo de descuento o por terminar. No se permiten más apuestas.", ephemeral=True)
+            await interaction.followup.send("🔒 **Mercado Suspendido**: El partido está en tiempo de descuento o por terminar. No se permiten más apuestas.", ephemeral=True)
             return
 
         # Registrar el partido en la DB
@@ -174,7 +175,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**\nFuente: **{source_text}**"
         
         # Enviamos ambos embeds: el de confirmación y el del pozo actual
-        await interaction.response.send_message(embeds=[confirm_embed, embed_pozo], ephemeral=True)
+        await interaction.followup.send(embeds=[confirm_embed, embed_pozo], ephemeral=True)
 
 class ParlayPozoView(discord.ui.View):
     """Vista para mostrar los pozos de un parlay de forma bajo demanda."""
@@ -219,9 +220,10 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
             await interaction.response.send_message("❌ Monto inválido.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
         balance = await database.get_user_balance(user_id)
         if balance < amount_val:
-            await interaction.response.send_message("❌ Saldo insuficiente.", ephemeral=True)
+            await interaction.followup.send("❌ Saldo insuficiente.", ephemeral=True)
             return
 
         # --- Candado de Seguridad Minuto 90 para Parlays ---
@@ -232,12 +234,12 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
             if not match_info: continue
             
             if match_info['status'] == 'FINISHED':
-                await interaction.response.send_message(f"❌ El partido **{home} vs {away}** ya ha terminado.", ephemeral=True)
+                await interaction.followup.send(f"❌ El partido **{home} vs {away}** ya ha terminado.", ephemeral=True)
                 return
             
             match_minute = api_football.calculate_match_minute(match_info['utcDate'])
             if match_minute >= 90:
-                await interaction.response.send_message(f"🔒 **Mercado Suspendido**: El partido **{home} vs {away}** está terminando. No se pueden crear parlays con este juego.", ephemeral=True)
+                await interaction.followup.send(f"🔒 **Mercado Suspendido**: El partido **{home} vs {away}** está terminando. No se pueden crear parlays con este juego.", ephemeral=True)
                 return
 
         # Registrar parlay
@@ -262,7 +264,7 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         
         # Opción B: Mostrar botón para ver pozos
         view = ParlayPozoView(match_ids, self.bot)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 class ParlayBuilderView(discord.ui.View):
     def __init__(self, matches, user_id, bot):
