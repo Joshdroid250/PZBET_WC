@@ -109,9 +109,9 @@ class TestResolutionAndNames(unittest.IsolatedAsyncioTestCase):
         
         self.assertTrue(found_result)
         
-        # Verificar balance (100 apostado + inyección 150 = 250)
+        # Verificar balance con multiplicador capado a 10x.
         new_balance = await database.get_user_balance(user_id)
-        self.assertEqual(new_balance, 250.0)
+        self.assertEqual(new_balance, 1000.0)
         print(f"✅ Balance tras resolución 1: {new_balance}")
 
         # Segunda resolución (debería ser bloqueada por el candado)
@@ -130,7 +130,7 @@ class TestResolutionAndNames(unittest.IsolatedAsyncioTestCase):
         
         # El balance no debería haber cambiado
         final_balance = await database.get_user_balance(user_id)
-        self.assertEqual(final_balance, 250.0)
+        self.assertEqual(final_balance, 1000.0)
         print(f"✅ Balance tras intento 2: {final_balance} (Sin cambios, OK)")
 
 if __name__ == '__main__':

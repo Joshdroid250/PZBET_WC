@@ -127,7 +127,8 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         )
 
         # Registrar apuesta
-        await database.place_bet(user_id, self.match_id, amount_val, self.prediction)
+        locked_multiplier = await database.calculate_locked_multiplier(self.match_id, amount_val, self.prediction)
+        await database.place_bet(user_id, self.match_id, amount_val, self.prediction, locked_multiplier=locked_multiplier)
         
         # Borrar el mensaje original de selección para limpiar el chat (UX)
         try:
@@ -144,7 +145,7 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         away_emoji = api_football.get_team_flag_emoji(match_info['awayTeam'])
 
         confirm_embed = discord.Embed(title="✅ Apuesta Confirmada", color=discord.Color.green())
-        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}"
+        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**"
         
         # Enviamos ambos embeds: el de confirmación y el del pozo actual
         await interaction.response.send_message(embeds=[confirm_embed, embed_pozo], ephemeral=True)
@@ -394,7 +395,8 @@ class CashoutSelect(discord.ui.Select):
     def __init__(self, items, is_parlay=False, user_id=None, bot=None):
         options = []
         if not is_parlay:
-            for home, away, amount, pred, m_id in items:
+            for item in items:
+                home, away, amount, pred, m_id = item[:5]
                 options.append(discord.SelectOption(
                     label=f"{home} vs {away}",
                     description=f"Apuesta: ${amount:.2f}",
@@ -634,11 +636,14 @@ class Betting(commands.Cog):
             return
 
         embed = discord.Embed(title="📋 Tus Apuestas Activas", color=discord.Color.blue())
-        for home, away, amount, pred, m_id in bets:
+        for bet in bets:
+            home, away, amount, pred, m_id = bet[:5]
+            locked_multiplier = bet[5] if len(bet) > 5 else None
             pred_display = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
+            multiplier_text = f"\nCuota: **x{locked_multiplier:.2f}**" if locked_multiplier else ""
             embed.add_field(
                 name=f"{home} vs {away}",
-                value=f"Apostado: **${amount:.2f}**\nPredicción: **{pred_display}**\nID: `{m_id}`",
+                value=f"Apostado: **${amount:.2f}**\nPredicción: **{pred_display}**{multiplier_text}\nID: `{m_id}`",
                 inline=False
             )
         await ctx.send(embed=embed, ephemeral=True)

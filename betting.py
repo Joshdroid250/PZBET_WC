@@ -2,7 +2,7 @@ import database
 import os
 
 # Cantidad que el bot "apuesta" simbólicamente para que siempre haya premio
-HOUSE_INJECTION = float(os.getenv('HOUSE_INJECTION', '150.0'))
+HOUSE_INJECTION = float(os.getenv('HOUSE_INJECTION', '1000000.0'))
 
 def get_multiplier_bar(multiplier, max_val=10.0, length=10):
     """Genera una barra visual tipo [███░░░] basada en el multiplicador."""
@@ -11,7 +11,7 @@ def get_multiplier_bar(multiplier, max_val=10.0, length=10):
     bar = "█" * filled + "░" * (length - filled)
     return f"[`{bar}`]"
 
-async def resolve_match_bets(bot, match_id, actual_winner):
+async def resolve_match_bets(bot, match_id, actual_winner, *score_args):
     """
     actual_winner: 'HOME_TEAM', 'AWAY_TEAM', or 'DRAW'
     Returns: list of payouts if resolved now, None if already resolved, [] if resolved now but no bets.
@@ -33,23 +33,21 @@ async def resolve_match_bets(bot, match_id, actual_winner):
         return []
 
     # El pozo total incluye lo que apostó la gente + la inyección del bot
-    total_user_pool = sum(bet[1] for bet in bets)
+    total_user_pool = sum(bet[2] for bet in bets)
     total_effective_pool = total_user_pool + HOUSE_INJECTION
     
-    winning_bets = [bet for bet in bets if bet[2] == actual_winner]
-    winning_user_pool = sum(bet[1] for bet in winning_bets)
+    winning_bets = [bet for bet in bets if bet[3] == actual_winner]
+    winning_user_pool = sum(bet[2] for bet in winning_bets)
 
     payouts = []
 
     if winning_user_pool > 0:
-        # El multiplicador se calcula sobre el pozo total (con inyección)
-        payout_ratio = total_effective_pool / winning_user_pool
-        
-        # Limitamos el multiplicador para que no sea absurdamente alto si alguien apuesta $1
-        if payout_ratio > 10.0: payout_ratio = 10.0
+        fallback_payout_ratio = total_effective_pool / winning_user_pool
+        if fallback_payout_ratio > 10.0: fallback_payout_ratio = 10.0
 
-        for user_id, amount, prediction in bets:
+        for bet_id, user_id, amount, prediction, locked_multiplier in bets:
             is_winner = (prediction == actual_winner)
+            payout_ratio = locked_multiplier if locked_multiplier else fallback_payout_ratio
             winnings = database.round_money(amount * payout_ratio) if is_winner else 0.0
             
             if is_winner:
@@ -57,7 +55,7 @@ async def resolve_match_bets(bot, match_id, actual_winner):
                 # Actualizar roles tras ganar
                 await update_user_roles(bot, user_id)
             
-            await database.mark_bet_resolved(match_id, user_id, winnings, is_winner)
+            await database.mark_bet_resolved_by_id(bet_id, winnings, is_winner)
             
             payouts.append({
                 'user_id': user_id,
@@ -68,8 +66,8 @@ async def resolve_match_bets(bot, match_id, actual_winner):
             })
     else:
         # Si nadie acertó, el dinero se queda en la "casa" (no hay ganadores)
-        for user_id, amount, prediction in bets:
-            await database.mark_bet_resolved(match_id, user_id, 0.0, False)
+        for bet_id, user_id, amount, prediction, locked_multiplier in bets:
+            await database.mark_bet_resolved_by_id(bet_id, 0.0, False)
             payouts.append({
                 'user_id': user_id,
                 'amount_bet': amount,

@@ -37,10 +37,10 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         
         bets = await database.get_active_bets_for_match(match_id)
         self.assertEqual(len(bets), 1)
-        self.assertEqual(bets[0][1], 50.0)
+        self.assertEqual(bets[0][2], 50.0)
 
     async def test_resolve_match_winners(self):
-        # Inyección de la casa es 150.0 por defecto
+        # Inyección de la casa es 1,000,000.0 por defecto
         user1, user2 = 1, 2
         match_id = 101
         await database.register_user(user1)
@@ -55,15 +55,33 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         mock_bot = MagicMock()
         mock_bot.guilds = []
         
-        # Pool Total = 60 + 40 + 150 (House) = 250.0
-        # Winner is HOME_TEAM. User 1 should get all 250.0.
+        # El multiplicador queda capado a 10x aunque el pozo efectivo sea mayor.
         await betting.resolve_match_bets(mock_bot, match_id, "HOME_TEAM")
         
         balance1 = await database.get_user_balance(user1)
         balance2 = await database.get_user_balance(user2)
         
-        self.assertEqual(balance1, 290.0)
+        self.assertEqual(balance1, 640.0)
         self.assertEqual(balance2, 60.0)
+
+    async def test_locked_multiplier_pays_original_odds(self):
+        user1, user2 = 1, 2
+        match_id = 103
+        await database.register_user(user1)
+        await database.register_user(user2)
+        await database.add_or_update_match(match_id, "Team A", "Team B", "SCHEDULED")
+
+        await database.place_bet(user1, match_id, 10.0, "HOME_TEAM", locked_multiplier=10.0)
+        await database.place_bet(user2, match_id, 10.0, "HOME_TEAM", locked_multiplier=8.5)
+
+        from unittest.mock import MagicMock
+        mock_bot = MagicMock()
+        mock_bot.guilds = []
+
+        await betting.resolve_match_bets(mock_bot, match_id, "HOME_TEAM")
+
+        self.assertEqual(await database.get_user_balance(user1), 190.0)
+        self.assertEqual(await database.get_user_balance(user2), 175.0)
 
     async def test_no_refund_if_no_winners(self):
         # Ahora el dinero se queda en el pozo si nadie gana

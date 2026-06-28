@@ -39,6 +39,7 @@ async def init_db():
                 match_id TEXT,
                 amount REAL,
                 prediction TEXT,
+                locked_multiplier REAL,
                 home_score INTEGER,
                 away_score INTEGER,
                 over_under_type TEXT,
@@ -52,6 +53,7 @@ async def init_db():
                 FOREIGN KEY (match_id) REFERENCES matches (match_id)
             )
         ''')
+        await _ensure_column(db, 'bets', 'locked_multiplier', 'REAL')
         
         await db.execute('''
             CREATE TABLE IF NOT EXISTS settings (
@@ -84,6 +86,12 @@ async def init_db():
             )
         ''')
         await db.commit()
+
+async def _ensure_column(db, table, column, definition):
+    async with db.execute(f'PRAGMA table_info({table})') as cursor:
+        columns = [row[1] for row in await cursor.fetchall()]
+    if column not in columns:
+        await db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
 
 async def place_parlay(user_id, amount, legs):
     """legs is a list of (match_id, prediction)"""
@@ -202,16 +210,33 @@ async def update_balance(user_id, amount):
         await db.execute('UPDATE users SET balance = ROUND(balance + ?, 2) WHERE user_id = ?', (amount, user_id))
         await db.commit()
 
-async def place_bet(user_id, match_id, amount, prediction):
+async def calculate_locked_multiplier(match_id, amount, prediction, max_multiplier=10.0):
     amount = round_money(amount)
+    total, pools = await get_match_pools(match_id)
+    prediction_pool = pools.get(prediction, 0.0)
+    effective_total = total + amount
+    effective_prediction_pool = prediction_pool + amount
+    if effective_prediction_pool <= 0:
+        return max_multiplier
+
+    import betting
+    multiplier = (effective_total + betting.HOUSE_INJECTION) / effective_prediction_pool
+    return round_money(min(max_multiplier, multiplier))
+
+async def place_bet(user_id, match_id, amount, prediction, home_score=None, away_score=None, locked_multiplier=None):
+    amount = round_money(amount)
+    if locked_multiplier is None:
+        locked_multiplier = await calculate_locked_multiplier(match_id, amount, prediction)
+    locked_multiplier = round_money(locked_multiplier)
     async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_column(db, 'bets', 'locked_multiplier', 'REAL')
         # Deduct balance first
         await db.execute('UPDATE users SET balance = ROUND(balance - ?, 2) WHERE user_id = ?', (amount, user_id))
         # Insert bet
         await db.execute('''
-            INSERT INTO bets (user_id, match_id, amount, prediction)
-            VALUES (?, ?, ?, ?)
-        ''', (user_id, match_id, amount, prediction))
+            INSERT INTO bets (user_id, match_id, amount, prediction, locked_multiplier, home_score, away_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (user_id, match_id, amount, prediction, locked_multiplier, home_score, away_score))
         await db.commit()
 
 async def add_or_update_match(match_id, home_team, away_team, status, winner=None):
@@ -227,14 +252,16 @@ async def add_or_update_match(match_id, home_team, away_team, status, winner=Non
 
 async def get_active_bets_for_match(match_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute('SELECT user_id, amount, prediction FROM bets WHERE match_id = ? AND resolved = 0', (str(match_id),)) as cursor:
+        await _ensure_column(db, 'bets', 'locked_multiplier', 'REAL')
+        async with db.execute('SELECT bet_id, user_id, amount, prediction, locked_multiplier FROM bets WHERE match_id = ? AND resolved = 0', (str(match_id),)) as cursor:
             return await cursor.fetchall()
 
 async def get_user_active_bets(user_id):
     async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_column(db, 'bets', 'locked_multiplier', 'REAL')
         # Join with matches table to get team names
         query = '''
-            SELECT m.home_team, m.away_team, b.amount, b.prediction, m.match_id
+            SELECT m.home_team, m.away_team, b.amount, b.prediction, m.match_id, b.locked_multiplier
             FROM bets b
             JOIN matches m ON b.match_id = m.match_id
             WHERE b.user_id = ? AND b.resolved = 0
@@ -268,6 +295,16 @@ async def mark_bet_resolved(match_id, user_id, payout, won):
             SET resolved = 1, payout = ?, won = ? 
             WHERE match_id = ? AND user_id = ? AND resolved = 0
         ''', (payout, won, str(match_id), user_id))
+        await db.commit()
+
+async def mark_bet_resolved_by_id(bet_id, payout, won):
+    payout = round_money(payout)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('''
+            UPDATE bets
+            SET resolved = 1, payout = ?, won = ?
+            WHERE bet_id = ? AND resolved = 0
+        ''', (payout, won, bet_id))
         await db.commit()
 
 async def mark_all_bets_resolved_empty(match_id):
