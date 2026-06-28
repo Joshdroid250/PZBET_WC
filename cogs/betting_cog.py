@@ -370,34 +370,41 @@ class MatchSelect(discord.ui.Select):
         super().__init__(placeholder="Selecciona un partido para apostar...", options=options)
         self.user_id = user_id
         self.bot = bot
-
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("No puedes interactuar con el menú de otro usuario.", ephemeral=True)
+            await interaction.response.send_message("No puedes interactuar con el menu de otro usuario.", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
         match_id = str(self.values[0])
         match_info = await api_football.get_match_details(match_id, session=self.bot.session)
-        
+        if not match_info:
+            await interaction.followup.send("No se pudo obtener el partido seleccionado.", ephemeral=True)
+            return
+
         home = match_info['homeTeam']['name']
         away = match_info['awayTeam']['name']
         home_emoji = api_football.get_team_flag_emoji(match_info['homeTeam'])
         away_emoji = api_football.get_team_flag_emoji(match_info['awayTeam'])
-        
+        kalshi_quotes = await get_kalshi_quote_labels(home, away, self.bot)
+        home_display = _with_quote(home, kalshi_quotes.get('HOME_TEAM'))
+        draw_display = _with_quote("Empate", kalshi_quotes.get('DRAW'))
+        away_display = _with_quote(away, kalshi_quotes.get('AWAY_TEAM'))
+
         embed = discord.Embed(
-            title=f"🏆 {home_emoji} {home} vs {away} {away_emoji}",
+            title=f"{home_emoji} {home} vs {away} {away_emoji}",
             description=f"Estado: **{match_info['status']}**\nID: `{match_id}`",
             color=discord.Color.green()
         )
         flag = api_football.get_team_flag_url(match_info['homeTeam'])
         if flag:
             embed.set_thumbnail(url=flag)
-        
+
         view = discord.ui.View(timeout=None)
-        btn_home = discord.ui.Button(label=home, style=discord.ButtonStyle.primary)
-        btn_draw = discord.ui.Button(label="Empate", style=discord.ButtonStyle.secondary)
-        btn_away = discord.ui.Button(label=away, style=discord.ButtonStyle.danger)
-        btn_cancel = discord.ui.Button(label="❌ Cancelar", style=discord.ButtonStyle.gray)
+        btn_home = discord.ui.Button(label=home_display[:80], style=discord.ButtonStyle.primary)
+        btn_draw = discord.ui.Button(label=draw_display[:80], style=discord.ButtonStyle.secondary)
+        btn_away = discord.ui.Button(label=away_display[:80], style=discord.ButtonStyle.danger)
+        btn_cancel = discord.ui.Button(label="Cancelar", style=discord.ButtonStyle.gray)
 
         async def make_bet_callback(inter, team, pred):
             await inter.response.send_modal(BetModal(match_id, team, pred, self.bot))
@@ -406,8 +413,7 @@ class MatchSelect(discord.ui.Select):
             try:
                 await inter.message.delete()
             except:
-                # Si es efímero y no se puede borrar, al menos quitamos la vista
-                await inter.response.edit_message(content="Menú cerrado.", embed=None, view=None)
+                await inter.response.edit_message(content="Menu cerrado.", embed=None, view=None)
 
         btn_home.callback = lambda i: make_bet_callback(i, home, "HOME_TEAM")
         btn_draw.callback = lambda i: make_bet_callback(i, "Empate", "DRAW")
@@ -419,12 +425,26 @@ class MatchSelect(discord.ui.Select):
         view.add_item(btn_away)
         view.add_item(btn_cancel)
 
-        await interaction.response.edit_message(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=None, embed=embed, view=view)
 
 class BettingView(discord.ui.View):
     def __init__(self, matches, user_id, bot):
         super().__init__(timeout=180)
         self.add_item(MatchSelect(matches, user_id, bot))
+
+def _with_quote(name, multiplier):
+    return f"{name} [x{multiplier:.2f}]" if multiplier else name
+
+async def get_kalshi_quote_labels(home_team, away_team, bot):
+    try:
+        odds = await kalshi_odds.get_multipliers(home_team, away_team, session=bot.session)
+    except Exception:
+        return {}
+    return {
+        prediction: match['multiplier']
+        for prediction, match in odds.items()
+        if match
+    }
 
 async def get_kalshi_embed(match_info, bot):
     home_team = match_info['homeTeam']['name']

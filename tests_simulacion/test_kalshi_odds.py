@@ -1,9 +1,14 @@
 import unittest
 
 import kalshi_odds
+from cogs import betting_cog
 
 
 class TestKalshiOddsMatching(unittest.TestCase):
+    def test_quote_label_formatting(self):
+        self.assertEqual(betting_cog._with_quote('Canada', 1.5), 'Canada [x1.50]')
+        self.assertEqual(betting_cog._with_quote('Canada', None), 'Canada')
+
     def test_matches_clear_team_market(self):
         events = [
             {
