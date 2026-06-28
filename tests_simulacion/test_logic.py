@@ -40,7 +40,7 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bets[0][2], 50.0)
 
     async def test_resolve_match_winners(self):
-        # Inyección de la casa es 1,000,000.0 por defecto
+        # Inyección de la casa es 500.0 por defecto
         user1, user2 = 1, 2
         match_id = 101
         await database.register_user(user1)
@@ -61,7 +61,7 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         balance1 = await database.get_user_balance(user1)
         balance2 = await database.get_user_balance(user2)
         
-        self.assertEqual(balance1, 640.0)
+        self.assertEqual(balance1, 599.8)
         self.assertEqual(balance2, 60.0)
 
     async def test_locked_multiplier_pays_original_odds(self):

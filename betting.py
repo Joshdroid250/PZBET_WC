@@ -2,7 +2,7 @@ import database
 import os
 
 # Cantidad que el bot "apuesta" simbólicamente para que siempre haya premio
-HOUSE_INJECTION = float(os.getenv('HOUSE_INJECTION', '1000000.0'))
+HOUSE_INJECTION = float(os.getenv('HOUSE_INJECTION', '500.0'))
 
 def get_multiplier_bar(multiplier, max_val=10.0, length=10):
     """Genera una barra visual tipo [███░░░] basada en el multiplicador."""

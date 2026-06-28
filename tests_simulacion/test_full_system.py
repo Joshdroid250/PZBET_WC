@@ -87,7 +87,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         await self.cog.match_processor()
 
         # Verificar cobro de apuesta individual:
-        # El pozo efectivo incluye 1,000,000 de la casa, pero el pago queda capado a 10x.
+        # El pozo efectivo incluye 500 de la casa, pero el pago queda capado a 10x.
         # Pago: 50 * 10 = 500. Balance: 30 + 500 = 530.
         balance_after_1 = await database.get_user_balance(user_id)
         self.assertEqual(balance_after_1, 530.0)
