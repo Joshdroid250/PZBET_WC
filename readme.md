@@ -1,63 +1,147 @@
-# ⚽ PZBET - FIFA World Cup Edition
+# PZBET - World Cup Betting Bot
 
-PZBET es un bot de Discord avanzado para la gestión de apuestas deportivas tipo **Parimutuel** (pozo común), totalmente optimizado para la Copa del Mundo 2026 utilizando la API oficial de la FIFA.
+PZBET es un bot de Discord para apuestas deportivas de futbol con soporte para cuotas externas de Kalshi, pozo local de respaldo, parlays, cashout, marcadores en vivo y resolucion automatica de partidos.
 
-## 🚀 Características Principales
+## Caracteristicas
 
-- **API FIFA Integrada**: Conexión en tiempo real con marcadores, estados de partidos e IDs alfanuméricos oficiales.
-- **Sistema Parimutuel**: Las cuotas se calculan dinámicamente basadas en el volumen total del pozo.
-- **Rastreador de Goles en Vivo**: Actualización automática de marcadores en canales de anuncios con edición de mensajes en tiempo real.
-- **Candado del Minuto 90**: Bloqueo automático de apuestas y cashouts al llegar al tiempo reglamentario para proteger la integridad del pozo.
-- **Parlays (Combinadas)**: Soporte para apuestas múltiples con resolución automática.
-- **Cashout**: Reembolso parcial (80%) para apuestas en partidos que aún no han terminado o llegado al minuto 90.
-- **Administración Robusta**: Herramientas para limpieza de base de datos, resolución manual y gestión de usuarios.
+- **Cuotas Kalshi como prioridad**: si Kalshi tiene mercado para el partido y la seleccion, la apuesta usa ese multiplicador.
+- **Pozo local de respaldo**: se usa solo si Kalshi esta desactivado, caido o no responde.
+- **Cuota congelada**: cada apuesta guarda el multiplicador exacto al momento de apostar.
+- **Comando `/kalshi`**: permite consultar multiplicadores antes de apostar.
+- **Parlays**: apuestas combinadas con resolucion automatica.
+- **Cashout**: recuperacion parcial antes del minuto 90.
+- **Candado minuto 90**: bloquea apuestas y cashouts al final del partido.
+- **Marcadores en vivo**: actualizacion y anuncios de resultados.
+- **SQLite persistente**: usuarios, apuestas, partidos, parlays e historial.
 
-## 🛠️ Instalación
+## Reglas de cuotas
 
-1. Clona el repositorio.
-2. Crea un entorno virtual y activa:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # En Windows: venv\Scripts\activate
-   ```
-3. Instala las dependencias:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configura tu archivo `.env` (ver sección de Configuración).
-5. Inicia el bot:
-   ```bash
-   python bot.py
-   ```
+1. Kalshi es la fuente principal cuando esta disponible.
+2. Si Kalshi responde y no encuentra mercado para la seleccion, la apuesta no se registra en el pozo local.
+3. El pozo local solo entra cuando Kalshi no esta disponible.
+4. La cuota final se congela al apostar y se muestra como `Fuente: Kalshi` o `Fuente: Pozo local`.
+5. `/kalshi` es solo informativo; la cuota oficial de la apuesta se fija cuando el usuario confirma el monto.
 
-## ⚙️ Configuración (.env)
+## Comandos principales
 
-El bot requiere las siguientes variables de entorno:
+- `/join`: registra al usuario.
+- `/balance`: muestra el balance.
+- `/matches`: lista partidos disponibles para apostar.
+- `/kalshi`: consulta multiplicadores Kalshi por partido.
+- `/apuestas`: muestra apuestas activas.
+- `/parlay`: crea una apuesta combinada.
+- `/mis_parlays`: muestra parlays activos.
+- `/cashout`: retira una apuesta activa con reembolso parcial.
+- `/vivo`: muestra partidos en vivo disponibles.
+- `/pozo`: consulta el pozo local.
+- `/historial`: historial personal.
+- `/historial_all`: historial global.
+- `/reglas`: explica el sistema de apuestas.
 
-```env
-DISCORD_TOKEN=tu_token_aquí
-BOT_PREFIX=!
-ANNOUNCEMENT_CHANNEL_ID=id_del_canal_de_goles
-COMPETITION_CODE=WC
-FIFA_API_BASE_URL=
+## Instalacion
+
+```bash
+python -m venv venv
 ```
 
-## 📂 Estructura del Proyecto
+Windows:
 
-- `bot.py`: Punto de entrada principal.
-- `api_football.py`: Módulo de comunicación con la API de la FIFA.
-- `database.py`: Gestión de persistencia en SQLite (Soporta IDs de texto).
-- `betting.py`: Lógica matemática de cálculos de premios y multiplicadores.
-- `cogs/`: Comandos de Discord organizados por módulos.
-- `mantenimiento_db/`: Scripts para diagnósticos y reparaciones de la base de datos.
-- `tests_simulacion/`: Suite de pruebas para verificar la lógica de pagos y el candado del minuto 90.
+```bash
+venv\Scripts\activate
+```
 
-## 🔒 Seguridad y Robustez
+Linux/macOS:
 
-- **IDs de Texto**: Migrado de IDs enteros a alfanuméricos para total compatibilidad con la FIFA.
-- **Manejo de Errores API**: Sistema de reintentos automático para errores 500 y protección contra Rate Limits.
-- **Cierre Rápido**: El bot detecta el estado `FINISHED` desde múltiples endpoints para asegurar que los premios se repartan apenas termina el encuentro.
+```bash
+source venv/bin/activate
+```
 
-## ⚖️ Licencia
+Instalar dependencias:
 
-Este proyecto es para uso personal y educativo. Todos los datos de partidos son propiedad de sus respectivos proveedores.
+```bash
+pip install -r requirements.txt
+```
+
+Iniciar el bot:
+
+```bash
+python bot.py
+```
+
+## Variables de entorno
+
+No incluyas tokens reales, URLs privadas ni secretos en este archivo.
+
+```env
+DISCORD_TOKEN=pon_tu_token_en_el_entorno
+BOT_PREFIX=!
+ANNOUNCEMENT_CHANNEL_ID=id_del_canal
+COMPETITION_CODE=WC
+
+KALSHI_ODDS_ENABLED=1
+KALSHI_SERIES_TICKER=serie_de_kalshi
+KALSHI_MATCH_MIN_CONFIDENCE=0.72
+KALSHI_MAX_PAGES=3
+
+MAX_MULTIPLIER=10.0
+MIN_MULTIPLIER=1.01
+HOUSE_INJECTION=500.0
+```
+
+Variables opcionales:
+
+- `RAILWAY_VOLUME_MOUNT_PATH`: ruta persistente para la base de datos en Railway u otro hosting.
+- `KALSHI_CATEGORY`: filtro adicional de categoria si se necesita.
+- `FIFA_API_BASE_URL`: solo configurarla en el entorno de despliegue si se usa un endpoint personalizado.
+- `KALSHI_BASE_URL`: solo configurarla en el entorno de despliegue si se necesita sobrescribir el endpoint por defecto.
+
+## Sincronizacion de comandos
+
+El bot sincroniza comandos globales al iniciar. Si Discord muestra comandos duplicados, normalmente hay comandos locales del servidor mezclados con comandos globales.
+
+Para limpiar comandos locales:
+
+```text
+!sync clear
+```
+
+Despues reinicia Discord o espera unos minutos. No ejecutes sincronizaciones globales repetidas salvo que sea necesario.
+
+## Testing
+
+Ejecutar toda la suite:
+
+```bash
+python -m unittest discover tests_simulacion
+```
+
+Pruebas cubiertas:
+
+- Registro y balances.
+- Apuestas con cuota congelada.
+- Kalshi y fallback al pozo local.
+- Parlays.
+- Cashout.
+- Resolucion automatica.
+- Candado de duplicidad de pagos.
+- Comandos restaurados.
+
+## Estructura
+
+- `bot.py`: entrada principal y sincronizacion de comandos.
+- `api_football.py`: cliente de partidos y marcadores.
+- `kalshi_odds.py`: matching y calculo de multiplicadores Kalshi.
+- `database.py`: persistencia SQLite.
+- `betting.py`: resolucion de pagos, parlays y roles.
+- `cogs/general.py`: comandos generales.
+- `cogs/betting_cog.py`: apuestas, cashout, pozo, Kalshi y resolucion.
+- `tests_simulacion/`: pruebas automatizadas.
+- `mantenimiento_db/`: utilidades de diagnostico y mantenimiento.
+
+## Produccion
+
+- Mantener secretos solo en variables de entorno del hosting.
+- Verificar que el volumen persistente de la base de datos este configurado.
+- Reiniciar el bot despues de cambios de comandos.
+- Usar `/kalshi` para validar mercados antes de abrir apuestas reales.
+- Revisar logs si Kalshi no responde y el sistema cae al pozo local.
