@@ -147,6 +147,48 @@ class TestKalshiOddsMatching(unittest.TestCase):
         self.assertEqual(result['AWAY_TEAM']['multiplier'], 4.0)
         self.assertEqual(result['DRAW']['multiplier'], 2.0)
 
+    def test_status_available_without_matching_market(self):
+        async def run():
+            async def fake_fetch(session=None, limit=200):
+                return {'available': True, 'events': []}
+            original_enabled = kalshi_odds.ENABLED
+            original_fetch = kalshi_odds.fetch_open_events_status
+            kalshi_odds.ENABLED = True
+            kalshi_odds.fetch_open_events_status = fake_fetch
+            try:
+                return await kalshi_odds.get_multiplier_status('Jordan', 'Argentina', 'AWAY_TEAM')
+            finally:
+                kalshi_odds.ENABLED = original_enabled
+                kalshi_odds.fetch_open_events_status = original_fetch
+
+        import asyncio
+        result = asyncio.run(run())
+
+        self.assertTrue(result['enabled'])
+        self.assertTrue(result['available'])
+        self.assertIsNone(result['match'])
+
+    def test_status_unavailable_allows_local_fallback(self):
+        async def run():
+            async def fake_fetch(session=None, limit=200):
+                return {'available': False, 'events': []}
+            original_enabled = kalshi_odds.ENABLED
+            original_fetch = kalshi_odds.fetch_open_events_status
+            kalshi_odds.ENABLED = True
+            kalshi_odds.fetch_open_events_status = fake_fetch
+            try:
+                return await kalshi_odds.get_multiplier_status('Jordan', 'Argentina', 'AWAY_TEAM')
+            finally:
+                kalshi_odds.ENABLED = original_enabled
+                kalshi_odds.fetch_open_events_status = original_fetch
+
+        import asyncio
+        result = asyncio.run(run())
+
+        self.assertTrue(result['enabled'])
+        self.assertFalse(result['available'])
+        self.assertIsNone(result['match'])
+
 
 if __name__ == '__main__':
     unittest.main()

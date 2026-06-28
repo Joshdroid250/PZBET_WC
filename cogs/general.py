@@ -153,36 +153,36 @@ class General(commands.Cog):
     async def reglas(self, ctx):
         """Explica el funcionamiento detallado de las apuestas."""
         embed = discord.Embed(
-            title="⚖️ ¿Cómo funcionan las apuestas?",
-            description="BetBot utiliza un sistema de pozo mutuo con inyección de la casa.",
+            title="Reglas de apuestas",
+            description="Las cuotas usan Kalshi como fuente principal cuando esta disponible.",
             color=discord.Color.blue()
         )
         embed.add_field(
-            name="1. El Pozo", 
-            value="Todas las apuestas de los usuarios se acumulan en un pozo único para cada partido.", 
+            name="1. Prioridad Kalshi",
+            value="Cuando Kalshi tiene mercado para el partido y tu seleccion, la apuesta se congela con ese multiplicador. Esa cuota no cambia aunque el mercado se mueva despues.",
             inline=False
         )
         embed.add_field(
-            name="2. Inyección de la Casa", 
-            value="El bot añade un monto extra (Bono de la Casa) al pozo inicial para asegurar premios atractivos incluso en partidos con pocas apuestas.", 
+            name="2. Pozo local como respaldo",
+            value="El pozo local solo se usa si Kalshi esta desactivado, caido o no responde. Si Kalshi responde pero no hay mercado para tu seleccion, la apuesta no se registra en el pozo para evitar confusiones.",
             inline=False
         )
         embed.add_field(
-            name="3. El Premio", 
-            value="Si aciertas, el pozo total se reparte entre todos los ganadores proporcionalmente a lo que apostaron. ¡Si eres el único ganador, te llevas todo el pozo!", 
+            name="3. Consulta antes de apostar",
+            value="Usa /kalshi para escoger un partido y ver los multiplicadores disponibles para local, empate y visitante.",
             inline=False
         )
         embed.add_field(
-            name="4. Sin Ganadores", 
-            value="Si nadie acierta el resultado, el dinero se queda en el pozo (la casa gana) para financiar futuros bonos.", 
+            name="4. Pago",
+            value="Si aciertas, cobras segun la cuota congelada al momento de apostar. Si la fuente fue Kalshi, veras Fuente: Kalshi en la confirmacion y en /apuestas.",
             inline=False
         )
         embed.add_field(
-            name="5. Bono Diario", 
-            value="Si tu balance llega a $0, el bot te regalará **$15.00** automáticamente cada 24 horas.", 
+            name="5. Sin ganadores y bono diario",
+            value="Si se usa pozo local y nadie acierta, el dinero queda en la casa. Si tu balance llega a $0, el bot puede darte el bono diario configurado.",
             inline=False
         )
-        embed.set_footer(text="Usa /matches para empezar a apostar.")
+        embed.set_footer(text="Usa /kalshi para revisar cuotas o /matches para apostar.")
         await ctx.send(embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name='config_roles')

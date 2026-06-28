@@ -159,6 +159,11 @@ def match_market_for_prediction(events, home_team, away_team, prediction):
 
 
 async def fetch_open_events(session=None, limit=200):
+    result = await fetch_open_events_status(session=session, limit=limit)
+    return result['events']
+
+
+async def fetch_open_events_status(session=None, limit=200):
     owns_session = session is None
     if owns_session:
         session = aiohttp.ClientSession()
@@ -178,7 +183,7 @@ async def fetch_open_events(session=None, limit=200):
                 timeout=aiohttp.ClientTimeout(total=8),
             ) as response:
                 if response.status != 200:
-                    return events
+                    return {'available': False, 'events': events}
                 data = await response.json()
                 batch = data.get('events') or []
                 if CATEGORY:
@@ -187,9 +192,9 @@ async def fetch_open_events(session=None, limit=200):
                 cursor = data.get('cursor')
                 if not cursor or not batch:
                     break
-        return events
+        return {'available': True, 'events': events}
     except Exception:
-        return []
+        return {'available': False, 'events': events}
     finally:
         if owns_session:
             await session.close()
@@ -200,6 +205,14 @@ async def get_multiplier(home_team, away_team, prediction, session=None):
         return None
     events = await fetch_open_events(session=session)
     return match_market_for_prediction(events, home_team, away_team, prediction)
+
+
+async def get_multiplier_status(home_team, away_team, prediction, session=None):
+    if not ENABLED:
+        return {'enabled': False, 'available': False, 'match': None}
+    result = await fetch_open_events_status(session=session)
+    match = match_market_for_prediction(result['events'], home_team, away_team, prediction)
+    return {'enabled': True, 'available': result['available'], 'match': match}
 
 
 async def get_multipliers(home_team, away_team, session=None):

@@ -140,11 +140,15 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         # Registrar apuesta
         odds_source = 'local'
         odds_reference = None
-        kalshi_match = await kalshi_odds.get_multiplier(home_team, away_team, self.prediction, session=self.bot.session)
+        kalshi_status = await kalshi_odds.get_multiplier_status(home_team, away_team, self.prediction, session=self.bot.session)
+        kalshi_match = kalshi_status['match']
         if kalshi_match:
             locked_multiplier = kalshi_match['multiplier']
             odds_source = 'kalshi'
             odds_reference = kalshi_match.get('market_ticker')
+        elif kalshi_status['enabled'] and kalshi_status['available']:
+            await interaction.followup.send("Kalshi respondió, pero no encontré mercado para esa selección. No se registró la apuesta para evitar usar el pozo local por error.", ephemeral=True)
+            return
         else:
             locked_multiplier = await database.calculate_locked_multiplier(self.match_id, amount_val, self.prediction)
 
