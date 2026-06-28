@@ -163,8 +163,6 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             await interaction.message.delete()
         except: pass
 
-        # Obtener el pozo actualizado
-        embed_pozo = await get_pozo_embed(self.match_id, bot=self.bot)
         
         # Crear embed de confirmación personalizado
         home_emoji = api_football.get_team_flag_emoji(match_info['homeTeam'])
@@ -174,8 +172,13 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         source_text = "Kalshi" if odds_source == 'kalshi' else "Pozo local"
         confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**\nFuente: **{source_text}**"
         
-        # Enviamos ambos embeds: el de confirmación y el del pozo actual
-        await interaction.followup.send(embeds=[confirm_embed, embed_pozo], ephemeral=True)
+        embeds = [confirm_embed]
+        if odds_source != 'kalshi':
+            embed_pozo = await get_pozo_embed(self.match_id, bot=self.bot)
+            if embed_pozo:
+                embeds.append(embed_pozo)
+
+        await interaction.followup.send(embeds=embeds, ephemeral=True)
 
 class ParlayPozoView(discord.ui.View):
     """Vista para mostrar los pozos de un parlay de forma bajo demanda."""
@@ -419,6 +422,66 @@ class BettingView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(MatchSelect(matches, user_id, bot))
 
+async def get_kalshi_embed(match_info, bot):
+    home_team = match_info['homeTeam']['name']
+    away_team = match_info['awayTeam']['name']
+    odds = await kalshi_odds.get_multipliers(home_team, away_team, session=bot.session)
+
+    embed = discord.Embed(
+        title=f"Kalshi: {home_team} vs {away_team}",
+        description=f"Estado: **{match_info['status']}**\nID: `{match_info['id']}`",
+        color=discord.Color.green()
+    )
+
+    labels = {
+        'HOME_TEAM': home_team,
+        'DRAW': 'Empate',
+        'AWAY_TEAM': away_team,
+    }
+    for prediction, label in labels.items():
+        match = odds.get(prediction)
+        if match:
+            value = f"Multiplicador: **x{match['multiplier']:.2f}**\nMercado: `{match.get('market_ticker') or 'N/A'}`"
+        else:
+            value = "Sin mercado Kalshi encontrado."
+        embed.add_field(name=label, value=value, inline=True)
+
+    embed.set_footer(text="Solo informativo. La cuota final se congela al apostar.")
+    return embed
+
+class KalshiMatchSelect(discord.ui.Select):
+    def __init__(self, matches, user_id, bot):
+        options = [
+            discord.SelectOption(
+                label=f"{m['homeTeam']['name']} vs {m['awayTeam']['name']}",
+                description=f"Fecha: {m['utcDate'][:10]}",
+                value=str(m['id'])
+            ) for m in matches[:25]
+        ]
+        super().__init__(placeholder="Selecciona un partido para ver Kalshi...", options=options)
+        self.user_id = user_id
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("No puedes interactuar con el menú de otro usuario.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        match_id = str(self.values[0])
+        match_info = await api_football.get_match_details(match_id, session=self.bot.session)
+        if not match_info:
+            await interaction.followup.send("No se pudo obtener el partido seleccionado.", ephemeral=True)
+            return
+
+        embed = await get_kalshi_embed(match_info, self.bot)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+class KalshiMatchView(discord.ui.View):
+    def __init__(self, matches, user_id, bot):
+        super().__init__(timeout=180)
+        self.add_item(KalshiMatchSelect(matches, user_id, bot))
+
 class CashoutSelect(discord.ui.Select):
     def __init__(self, items, is_parlay=False, user_id=None, bot=None):
         options = []
@@ -654,6 +717,23 @@ class Betting(commands.Cog):
         embed = discord.Embed(title="📅 Próximos Partidos", description="Selecciona un partido para realizar tu apuesta.", color=discord.Color.blue())
         await ctx.send(embed=embed, view=view, ephemeral=True)
 
+
+    @commands.hybrid_command(name='kalshi')
+    async def kalshi(self, ctx):
+        """Consulta multiplicadores Kalshi para un partido."""
+        await ctx.defer(ephemeral=True)
+        upcoming = await api_football.get_upcoming_matches(session=self.bot.session)
+        if not upcoming:
+            await ctx.send("No hay partidos proximos disponibles para consultar.", ephemeral=True)
+            return
+
+        view = KalshiMatchView(upcoming[:25], ctx.author.id, self.bot)
+        embed = discord.Embed(
+            title="Consulta Kalshi",
+            description="Selecciona un partido para ver los multiplicadores disponibles.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed, view=view, ephemeral=True)
     @commands.hybrid_command(name='apuestas')
     async def apuestas(self, ctx):
         """Muestra tus apuestas individuales activas."""

@@ -200,3 +200,13 @@ async def get_multiplier(home_team, away_team, prediction, session=None):
         return None
     events = await fetch_open_events(session=session)
     return match_market_for_prediction(events, home_team, away_team, prediction)
+
+
+async def get_multipliers(home_team, away_team, session=None):
+    if not ENABLED:
+        return {}
+    events = await fetch_open_events(session=session)
+    return {
+        prediction: match_market_for_prediction(events, home_team, away_team, prediction)
+        for prediction in ('HOME_TEAM', 'DRAW', 'AWAY_TEAM')
+    }

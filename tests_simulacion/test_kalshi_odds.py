@@ -102,6 +102,51 @@ class TestKalshiOddsMatching(unittest.TestCase):
         self.assertEqual(draw['market_ticker'], 'KXWCGAME-26JUN27JORARG-TIE')
         self.assertEqual(draw['multiplier'], 10.0)
 
+    def test_get_multipliers_from_same_event_set(self):
+        async def run():
+            events = [
+                {
+                    'event_ticker': 'KXWCGAME-26JUN27JORARG',
+                    'title': 'Jordan vs Argentina',
+                    'sub_title': 'JOR vs ARG (Jun 27)',
+                    'markets': [
+                        {
+                            'ticker': 'KXWCGAME-26JUN27JORARG-JOR',
+                            'title': 'Jordan vs Argentina Winner?',
+                            'yes_ask_dollars': '0.20',
+                        },
+                        {
+                            'ticker': 'KXWCGAME-26JUN27JORARG-ARG',
+                            'title': 'Jordan vs Argentina Winner?',
+                            'yes_ask_dollars': '0.25',
+                        },
+                        {
+                            'ticker': 'KXWCGAME-26JUN27JORARG-TIE',
+                            'title': 'Jordan vs Argentina Winner?',
+                            'yes_ask_dollars': '0.50',
+                        },
+                    ],
+                }
+            ]
+            async def fake_fetch(session=None):
+                return events
+            original_enabled = kalshi_odds.ENABLED
+            original_fetch = kalshi_odds.fetch_open_events
+            kalshi_odds.ENABLED = True
+            kalshi_odds.fetch_open_events = fake_fetch
+            try:
+                return await kalshi_odds.get_multipliers('Jordan', 'Argentina')
+            finally:
+                kalshi_odds.ENABLED = original_enabled
+                kalshi_odds.fetch_open_events = original_fetch
+
+        import asyncio
+        result = asyncio.run(run())
+
+        self.assertEqual(result['HOME_TEAM']['multiplier'], 5.0)
+        self.assertEqual(result['AWAY_TEAM']['multiplier'], 4.0)
+        self.assertEqual(result['DRAW']['multiplier'], 2.0)
+
 
 if __name__ == '__main__':
     unittest.main()
