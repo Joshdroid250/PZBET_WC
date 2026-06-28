@@ -27,6 +27,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         self.bot.fetch_channel = AsyncMock()
         self.bot.wait_until_ready = AsyncMock() # Fix: must be awaitable
         self.channel = AsyncMock()
+        self.channel.send.return_value.id = 987654
         self.bot.get_channel.return_value = self.channel
         self.bot.fetch_channel.return_value = self.channel
         
@@ -37,6 +38,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         self.cog = Betting(self.bot)
 
     async def asyncTearDown(self):
+        self.cog.cog_unload()
         if os.path.exists(database.DB_PATH):
             os.remove(database.DB_PATH)
 
@@ -71,13 +73,15 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
                     'homeTeam': {'name': home},
                     'awayTeam': {'name': away},
                     'status': 'FINISHED',
+                    'utcDate': '2026-06-15T20:00:00Z',
                     'score': {'winner': 'HOME_TEAM', 'fullTime': {'home': 1, 'away': 0}}
                 },
                 {
                     'id': match_b_id,
                     'homeTeam': {'name': "France"},
                     'awayTeam': {'name': "Italy"},
-                    'status': 'SCHEDULED', # Todavía no termina
+                    'status': 'SCHEDULED',
+                    'utcDate': '2026-06-16T20:00:00Z',
                     'score': {'winner': None, 'fullTime': {'home': 0, 'away': 0}}
                 }
             ]
@@ -91,7 +95,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         # Pago: 50 * 10 = 500. Balance: 30 + 500 = 530.
         balance_after_1 = await database.get_user_balance(user_id)
         self.assertEqual(balance_after_1, 530.0)
-        print(f"✅ Apuesta individual pagada. Balance: {balance_after_1}")
+        print(f"OK: Apuesta individual pagada. Balance: {balance_after_1}")
 
         # Verificar que el mensaje de resultado tiene el marcador
         found_score = False
@@ -102,7 +106,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(found_score, "El marcador (1-0) no aparece en el anuncio de resultado")
 
         # 4. Intentar resolver el mismo partido OTRA VEZ (Simular duplicado)
-        print("--- Intento duplicado de resolución ---")
+        print("--- Intento duplicado de resolucion ---")
         self.channel.send.reset_mock()
         await self.cog.match_processor()
         
@@ -110,7 +114,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         final_balance_1 = await database.get_user_balance(user_id)
         self.assertEqual(final_balance_1, 530.0)
         self.assertEqual(self.channel.send.call_count, 0)
-        print("✅ Candado de duplicidad funcionó: Ni pagos ni mensajes extra.")
+        print("OK: Candado de duplicidad funciono: Ni pagos ni mensajes extra.")
 
         # 5. Resolver el segundo partido para cerrar el Parlay
         api_football.fetch_json = AsyncMock(return_value={
@@ -120,6 +124,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
                     'homeTeam': {'name': home},
                     'awayTeam': {'name': away},
                     'status': 'FINISHED',
+                    'utcDate': '2026-06-15T20:00:00Z',
                     'score': {'winner': 'HOME_TEAM', 'fullTime': {'home': 1, 'away': 0}}
                 },
                 {
@@ -127,6 +132,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
                     'homeTeam': {'name': "France"},
                     'awayTeam': {'name': "Italy"},
                     'status': 'FINISHED',
+                    'utcDate': '2026-06-15T20:00:00Z',
                     'score': {'winner': 'AWAY_TEAM', 'fullTime': {'home': 1, 'away': 2}}
                 }
             ]
@@ -139,7 +145,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         # Balance final: 530 + 80 = 610.
         final_balance = await database.get_user_balance(user_id)
         self.assertEqual(final_balance, 610.0)
-        print(f"✅ Parlay pagado. Balance final: {final_balance}")
+        print(f"OK: Parlay pagado. Balance final: {final_balance}")
 
         # Verificar anuncio de parlay
         found_parlay_win = False
@@ -148,7 +154,9 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
             if embed and "PARLAY GANADO" in embed.title:
                 found_parlay_win = True
         self.assertTrue(found_parlay_win, "No se anunció la victoria del Parlay.")
-        print("✅ Sistema verificado al 100%: Apuestas, Parlays, Marcadores y Seguridad.")
+        print("OK: Sistema verificado al 100%: Apuestas, Parlays, Marcadores y Seguridad.")
 
 if __name__ == '__main__':
     unittest.main()
+
+

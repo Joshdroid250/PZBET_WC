@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _safe_print(*args, **kwargs):
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        text = " ".join(str(arg) for arg in args)
+        print(text.encode("ascii", "replace").decode("ascii"), **kwargs)
+
 BASE_URL = os.getenv('FIFA_API_BASE_URL', 'https://fifaapi-v7l1.onrender.com/v4')
 
 async def fetch_json(url, session=None, retries=2):
@@ -19,24 +26,24 @@ async def fetch_json(url, session=None, retries=2):
                         return await response.json()
                     elif response.status == 429:
                         if attempt == retries - 1:
-                            print("⚠️ API Rate Limit alcanzado. Esperando...")
+                            _safe_print("⚠️ API Rate Limit alcanzado. Esperando...")
                         await asyncio.sleep(2)
                         continue
                     elif response.status >= 500:
                         if attempt == retries - 1:
-                            print(f"❌ Error de Servidor en API ({url}): {response.status}")
+                            _safe_print(f"❌ Error de Servidor en API ({url}): {response.status}")
                         await asyncio.sleep(1) # Pequeña espera antes de reintentar
                         continue
                     else:
-                        print(f"Error en API ({url}): {response.status}")
+                        _safe_print(f"Error en API ({url}): {response.status}")
                         return None
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 if attempt == retries - 1:
-                    print(f"📡 Error de conexión/tiempo en API: {e}")
+                    _safe_print(f"📡 Error de conexión/tiempo en API: {e}")
                 await asyncio.sleep(1)
                 continue
             except Exception as e:
-                print(f"❌ Error inesperado en fetch_json: {e}")
+                _safe_print(f"❌ Error inesperado en fetch_json: {e}")
                 return None
     finally:
         if not session:

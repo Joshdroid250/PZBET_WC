@@ -1,6 +1,13 @@
 import database
 import os
 
+def _safe_print(*args, **kwargs):
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        text = " ".join(str(arg) for arg in args)
+        print(text.encode("ascii", "replace").decode("ascii"), **kwargs)
+
 # Cantidad que el bot "apuesta" simbólicamente para que siempre haya premio
 HOUSE_INJECTION = float(os.getenv('HOUSE_INJECTION', '500.0'))
 
@@ -19,7 +26,7 @@ async def resolve_match_bets(bot, match_id, actual_winner, *score_args):
     # --- CANDADO DE SEGURIDAD ---
     # Si el partido ya aparece como FINISHED en la DB, no procesar de nuevo.
     if await database.is_match_resolved(match_id):
-        print(f"⚠️ [SEGURIDAD] Intento de doble pago detectado para partido {match_id}. Abortando.")
+        _safe_print(f"⚠️ [SEGURIDAD] Intento de doble pago detectado para partido {match_id}. Abortando.")
         return None
     
     bets = await database.get_active_bets_for_match(match_id)
@@ -91,20 +98,20 @@ async def resolve_parlays_for_match(bot, match_id, winner):
     import os
     
     parlay_ids = await database.get_active_parlay_ids()
-    print(f"DEBUG: Procesando parlays para partido {match_id}. Parlays activos: {parlay_ids}")
+    _safe_print(f"DEBUG: Procesando parlays para partido {match_id}. Parlays activos: {parlay_ids}")
     
     for p_id in parlay_ids:
         legs = await database.get_parlay_legs(p_id)
-        print(f"DEBUG: Revisando parlay {p_id}, piernas: {legs}")
+        _safe_print(f"DEBUG: Revisando parlay {p_id}, piernas: {legs}")
         
         for leg_m_id, pred, leg_status in legs:
             # Asegurar comparación numérica
             if str(leg_m_id) == str(match_id) and leg_status == 'PENDING':
-                print(f"DEBUG: Coincidencia en parlay {p_id}, pierna {leg_m_id}. Predicción: {pred}, Resultado: {winner}")
+                _safe_print(f"DEBUG: Coincidencia en parlay {p_id}, pierna {leg_m_id}. Predicción: {pred}, Resultado: {winner}")
                 
                 new_status = 'WON' if pred == winner else 'LOST'
                 await database.update_parlay_leg_status(p_id, match_id, new_status)
-                print(f"DEBUG: Estado de pierna actualizado a {new_status}")
+                _safe_print(f"DEBUG: Estado de pierna actualizado a {new_status}")
                 
                 # Re-consultar todas las piernas para ver si el parlay cerró
                 all_legs = await database.get_parlay_legs(p_id)
@@ -115,7 +122,7 @@ async def resolve_parlays_for_match(bot, match_id, winner):
                 if any(l[2] == 'LOST' for l in all_legs):
                     parlay_status = "LOST"
                     await database.resolve_parlay(p_id, 0.0, False)
-                    print(f"DEBUG: Parlay {p_id} marcado como PERDIDO")
+                    _safe_print(f"DEBUG: Parlay {p_id} marcado como PERDIDO")
                     # Necesitamos el user_id para la notificación
                     async with database.aiosqlite.connect(database.DB_PATH) as db:
                         async with db.execute('SELECT user_id FROM parlays WHERE parlay_id = ?', (p_id,)) as cursor:
@@ -130,7 +137,7 @@ async def resolve_parlays_for_match(bot, match_id, winner):
                             amt, p_user_id = row
                     payout = database.round_money(amt * (2 ** len(all_legs)))
                     await database.resolve_parlay(p_id, payout, True)
-                    print(f"DEBUG: Parlay {p_id} marcado como GANADO. Pago: ${payout}")
+                    _safe_print(f"DEBUG: Parlay {p_id} marcado como GANADO. Pago: ${payout}")
 
                 # Notificar si se cerró
                 if parlay_status != "PENDING":
@@ -202,4 +209,4 @@ async def update_user_roles(bot, user_id):
                 if roles_to_remove: await member.remove_roles(*roles_to_remove)
                 if role_to_add: await member.add_roles(role_to_add)
             except Exception as e:
-                print(f"Error actualizando roles para {user_id} en {guild.name}: {e}")
+                _safe_print(f"Error actualizando roles para {user_id} en {guild.name}: {e}")

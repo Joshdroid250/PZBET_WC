@@ -3,9 +3,17 @@ from discord.ext import commands, tasks
 import database
 import api_football
 import betting
+import kalshi_odds
 import os
 import asyncio
 from datetime import datetime, timezone
+
+def _safe_print(*args, **kwargs):
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        text = " ".join(str(arg) for arg in args)
+        print(text.encode("ascii", "replace").decode("ascii"), **kwargs)
 
 async def get_pozo_embed(match_id, bot=None):
     """Helper para construir el Embed del pozo de forma consistente."""
@@ -125,10 +133,29 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
             match_info['awayTeam']['name'], 
             match_info['status']
         )
+        home_team = match_info['homeTeam']['name']
+        away_team = match_info['awayTeam']['name']
 
         # Registrar apuesta
-        locked_multiplier = await database.calculate_locked_multiplier(self.match_id, amount_val, self.prediction)
-        await database.place_bet(user_id, self.match_id, amount_val, self.prediction, locked_multiplier=locked_multiplier)
+        odds_source = 'local'
+        odds_reference = None
+        kalshi_match = await kalshi_odds.get_multiplier(home_team, away_team, self.prediction, session=self.bot.session)
+        if kalshi_match:
+            locked_multiplier = kalshi_match['multiplier']
+            odds_source = 'kalshi'
+            odds_reference = kalshi_match.get('market_ticker')
+        else:
+            locked_multiplier = await database.calculate_locked_multiplier(self.match_id, amount_val, self.prediction)
+
+        await database.place_bet(
+            user_id,
+            self.match_id,
+            amount_val,
+            self.prediction,
+            locked_multiplier=locked_multiplier,
+            odds_source=odds_source,
+            odds_reference=odds_reference,
+        )
         
         # Borrar el mensaje original de selección para limpiar el chat (UX)
         try:
@@ -139,13 +166,12 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         embed_pozo = await get_pozo_embed(self.match_id, bot=self.bot)
         
         # Crear embed de confirmación personalizado
-        home_team = match_info['homeTeam']['name']
-        away_team = match_info['awayTeam']['name']
         home_emoji = api_football.get_team_flag_emoji(match_info['homeTeam'])
         away_emoji = api_football.get_team_flag_emoji(match_info['awayTeam'])
 
         confirm_embed = discord.Embed(title="✅ Apuesta Confirmada", color=discord.Color.green())
-        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**"
+        source_text = "Kalshi" if odds_source == 'kalshi' else "Pozo local"
+        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**\nFuente: **{source_text}**"
         
         # Enviamos ambos embeds: el de confirmación y el del pozo actual
         await interaction.response.send_message(embeds=[confirm_embed, embed_pozo], ephemeral=True)
@@ -513,7 +539,7 @@ class Betting(commands.Cog):
             if not active_matches_db:
                 return
 
-            print(f"🔍 [PROCESSOR] Revisando {len(active_matches_db)} partidos activos...")
+            _safe_print(f"🔍 [PROCESSOR] Revisando {len(active_matches_db)} partidos activos...")
 
             # 2. ÚNICA CONSULTA A LA API: Obtener todos los partidos de la competición
             # Para ahorrar llamadas, traemos todos los de la competición configurada
@@ -522,7 +548,7 @@ class Betting(commands.Cog):
             data_all = await api_football.fetch_json(url_all, session=self.bot.session)
             
             if not data_all or 'matches' not in data_all:
-                print("⚠️ No se pudo obtener la lista de partidos de la API.")
+                _safe_print("⚠️ No se pudo obtener la lista de partidos de la API.")
                 return
 
             all_fifa_matches = data_all['matches']
@@ -547,7 +573,7 @@ class Betting(commands.Cog):
                 
                 # Calcular minuto para el log
                 f_minute = api_football.calculate_match_minute(f_match['utcDate'])
-                print(f"⚽ [LOG] {f_home} {f_score} {f_away} ({f_status}) - Min: {f_minute:.1f}'")
+                _safe_print(f"⚽ [LOG] {f_home} {f_score} {f_away} ({f_status}) - Min: {f_minute:.1f}'")
 
                 # --- CASO A: PARTIDO FINALIZADO ---
                 if f_status == 'FINISHED':
@@ -596,7 +622,7 @@ class Betting(commands.Cog):
                                 msg = await channel.fetch_message(msg_id)
                                 await msg.edit(embed=embed_live)
                                 await database.update_live_msg_info(m_id, msg_id, f_score)
-                                print(f"📝 Marcador editado: {f_home} {f_score} {f_away}")
+                                _safe_print(f"📝 Marcador editado: {f_home} {f_score} {f_away}")
                             except discord.NotFound:
                                 new_msg = await channel.send(embed=embed_live)
                                 await database.update_live_msg_info(m_id, new_msg.id, f_score)
@@ -604,10 +630,10 @@ class Betting(commands.Cog):
                     else:
                         new_msg = await channel.send(embed=embed_live)
                         await database.update_live_msg_info(m_id, new_msg.id, f_score)
-                        print(f"📣 Nuevo marcador enviado: {f_home} vs {f_away}")
+                        _safe_print(f"📣 Nuevo marcador enviado: {f_home} vs {f_away}")
 
         except Exception as e:
-            print(f"Error en match_processor: {e}")
+            _safe_print(f"Error en match_processor: {e}")
 
     @match_processor.before_loop
     async def before_match_processor(self):
@@ -639,11 +665,13 @@ class Betting(commands.Cog):
         for bet in bets:
             home, away, amount, pred, m_id = bet[:5]
             locked_multiplier = bet[5] if len(bet) > 5 else None
+            odds_source = bet[6] if len(bet) > 6 else None
             pred_display = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
             multiplier_text = f"\nCuota: **x{locked_multiplier:.2f}**" if locked_multiplier else ""
+            source_text = f"\nFuente: **{'Kalshi' if odds_source == 'kalshi' else 'Pozo local'}**" if odds_source else ""
             embed.add_field(
                 name=f"{home} vs {away}",
-                value=f"Apostado: **${amount:.2f}**\nPredicción: **{pred_display}**{multiplier_text}\nID: `{m_id}`",
+                value=f"Apostado: **${amount:.2f}**\nPredicción: **{pred_display}**{multiplier_text}{source_text}\nID: `{m_id}`",
                 inline=False
             )
         await ctx.send(embed=embed, ephemeral=True)
@@ -823,7 +851,7 @@ class Betting(commands.Cog):
                     
                     await channel.send(embed=embed_res)
             except Exception as e:
-                print(f"Error al anunciar debug_resolve: {e}")
+                _safe_print(f"Error al anunciar debug_resolve: {e}")
 
         await ctx.send(f"✅ Partido `{home_name} vs {away_name}` resuelto como `{winner}` y anunciado.", ephemeral=True)
 
