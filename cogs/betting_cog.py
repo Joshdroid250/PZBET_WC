@@ -15,65 +15,6 @@ def _safe_print(*args, **kwargs):
         text = " ".join(str(arg) for arg in args)
         print(text.encode("ascii", "replace").decode("ascii"), **kwargs)
 
-async def get_pozo_embed(match_id, bot=None):
-    """Helper para construir el Embed del pozo de forma consistente."""
-    session = bot.session if bot else None
-    match_info = await api_football.get_match_details(match_id, session=session)
-    if not match_info:
-        return None
-
-    total_bets, pools = await database.get_match_pools(match_id)
-    total_pool = total_bets + betting.HOUSE_INJECTION
-    
-    home = match_info['homeTeam']['name']
-    away = match_info['awayTeam']['name']
-    
-    embed = discord.Embed(
-        title=f"📊 Análisis del Pozo: {home} vs {away}",
-        description=f"Estado: **{match_info['status']}**\nVolumen Total: **${total_pool:.2f}**",
-        color=discord.Color.blue()
-    )
-
-    for label, pred_key in [("Local", "HOME_TEAM"), ("Visitante", "AWAY_TEAM"), ("Empate", "DRAW")]:
-        amount = pools.get(pred_key, 0)
-        multiplier = min(10.0, total_pool / amount if amount > 0 else total_pool / 1.0)
-        bar = betting.get_multiplier_bar(multiplier)
-        name = home if pred_key == "HOME_TEAM" else away if pred_key == "AWAY_TEAM" else "Empate"
-        
-        embed.add_field(
-            name=f"🔹 {name}",
-            value=f"Apostado: `${amount:.2f}`\nCuota: **x{multiplier:.2f}**\n{bar}",
-            inline=True
-        )
-
-    embed.set_footer(text=f"ID del partido: {match_id} | Inyección de la casa incluida.")
-    return embed
-
-class PozoMatchSelect(discord.ui.Select):
-    def __init__(self, matches, bot):
-        options = [
-            discord.SelectOption(
-                label=f"{m[1]} vs {m[2]}",
-                description=f"Consultar pozo actual",
-                value=str(m[0])
-            ) for m in matches[:25]
-        ]
-        super().__init__(placeholder="Selecciona un partido para ver el pozo...", options=options)
-        self.bot = bot
-
-    async def callback(self, interaction: discord.Interaction):
-        match_id = str(self.values[0])
-        embed = await get_pozo_embed(match_id, bot=self.bot)
-        if embed:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Error al obtener detalles del pozo.", ephemeral=True)
-
-class PozoMatchView(discord.ui.View):
-    def __init__(self, matches, bot):
-        super().__init__(timeout=120)
-        self.add_item(PozoMatchSelect(matches, bot))
-
 class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
     amount = discord.ui.TextInput(
         label='Cantidad a apostar',
@@ -137,20 +78,17 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         home_team = match_info['homeTeam']['name']
         away_team = match_info['awayTeam']['name']
 
-        # Registrar apuesta
-        odds_source = 'local'
+        # Registrar apuesta solo con cuota Kalshi.
+        odds_source = 'kalshi'
         odds_reference = None
         kalshi_status = await kalshi_odds.get_multiplier_status(home_team, away_team, self.prediction, session=self.bot.session)
         kalshi_match = kalshi_status['match']
         if kalshi_match:
             locked_multiplier = kalshi_match['multiplier']
-            odds_source = 'kalshi'
             odds_reference = kalshi_match.get('market_ticker')
-        elif kalshi_status['enabled'] and kalshi_status['available']:
-            await interaction.followup.send("Kalshi respondió, pero no encontré mercado para esa selección. No se registró la apuesta para evitar usar el pozo local por error.", ephemeral=True)
-            return
         else:
-            locked_multiplier = await database.calculate_locked_multiplier(self.match_id, amount_val, self.prediction)
+            await interaction.followup.send("No hay cuota Kalshi disponible para esa selección en este momento. No se registró la apuesta.", ephemeral=True)
+            return
 
         await database.place_bet(
             user_id,
@@ -173,38 +111,9 @@ class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
         away_emoji = api_football.get_team_flag_emoji(match_info['awayTeam'])
 
         confirm_embed = discord.Embed(title="✅ Apuesta Confirmada", color=discord.Color.green())
-        source_text = "Kalshi" if odds_source == 'kalshi' else "Pozo local"
-        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**\nFuente: **{source_text}**"
-        
-        embeds = [confirm_embed]
-        if odds_source != 'kalshi':
-            embed_pozo = await get_pozo_embed(self.match_id, bot=self.bot)
-            if embed_pozo:
-                embeds.append(embed_pozo)
+        confirm_embed.description = f"Has apostado **${amount_val:.2f}** a **{self.team_name}** en el partido:\n{home_emoji} **{home_team} vs {away_team}** {away_emoji}\nCuota congelada: **x{locked_multiplier:.2f}**\nFuente: **Kalshi**"
 
-        await interaction.followup.send(embeds=embeds, ephemeral=True)
-
-class ParlayPozoView(discord.ui.View):
-    """Vista para mostrar los pozos de un parlay de forma bajo demanda."""
-    def __init__(self, match_ids, bot):
-        super().__init__(timeout=120)
-        self.match_ids = match_ids
-        self.bot = bot
-
-    @discord.ui.button(label="🔍 Ver Pozos de mis Partidos", style=discord.ButtonStyle.secondary)
-    async def view_pozos(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        embeds = []
-        for m_id in self.match_ids:
-            embed = await get_pozo_embed(m_id, bot=self.bot)
-            if embed:
-                embeds.append(embed)
-        
-        if embeds:
-            # Discord permite enviar hasta 10 embeds por mensaje
-            await interaction.followup.send(content="📊 Aquí tienes el estado actual de los pozos en tu parlay:", embeds=embeds[:10], ephemeral=True)
-        else:
-            await interaction.followup.send("❌ No se pudieron cargar los pozos.", ephemeral=True)
+        await interaction.followup.send(embed=confirm_embed, ephemeral=True)
 
 class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
     amount = discord.ui.TextInput(
@@ -234,9 +143,7 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
             return
 
         # --- Candado de Seguridad Minuto 90 para Parlays ---
-        match_ids = []
         for m_id, pred, home, away in self.legs:
-            match_ids.append(m_id)
             match_info = await api_football.get_match_details(m_id, session=self.bot.session)
             if not match_info: continue
             
@@ -269,9 +176,7 @@ class ParlayAmountModal(discord.ui.Modal, title='Monto del Parlay'):
         embed.add_field(name="Combinaciones", value=legs_text, inline=False)
         embed.set_footer(text="¡Ganas si aciertas todas las predicciones!")
         
-        # Opción B: Mostrar botón para ver pozos
-        view = ParlayPozoView(match_ids, self.bot)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 class ParlayBuilderView(discord.ui.View):
     def __init__(self, matches, user_id, bot):
@@ -797,7 +702,7 @@ class Betting(commands.Cog):
             odds_source = bet[6] if len(bet) > 6 else None
             pred_display = home if pred == 'HOME_TEAM' else away if pred == 'AWAY_TEAM' else "Empate"
             multiplier_text = f"\nCuota: **x{locked_multiplier:.2f}**" if locked_multiplier else ""
-            source_text = f"\nFuente: **{'Kalshi' if odds_source == 'kalshi' else 'Pozo local'}**" if odds_source else ""
+            source_text = f"\nFuente: **Kalshi**" if odds_source else ""
             embed.add_field(
                 name=f"{home} vs {away}",
                 value=f"Apostado: **${amount:.2f}**\nPredicción: **{pred_display}**{multiplier_text}{source_text}\nID: `{m_id}`",
@@ -809,18 +714,8 @@ class Betting(commands.Cog):
     async def parlay(self, ctx):
         """Crea una apuesta combinada (Parlay) para aumentar tus ganancias."""
         await ctx.defer(ephemeral=True)
-        upcoming = await api_football.get_upcoming_matches(session=self.bot.session)
-        if not upcoming or len(upcoming) < 2:
-            await ctx.send("⚽ Se necesitan al menos 2 partidos próximos para crear un parlay.", ephemeral=True)
-            return
-        
-        view = ParlayBuilderView(upcoming[:25], ctx.author.id, self.bot)
-        embed = discord.Embed(
-            title="🏗️ Creador de Parlays", 
-            description="Selecciona al menos 2 partidos. ¡Debes acertar todos para ganar!", 
-            color=discord.Color.gold()
-        )
-        await ctx.send(embed=embed, view=view, ephemeral=True)
+        await ctx.send("Los parlays estan desactivados mientras las apuestas usan solo cuotas Kalshi.", ephemeral=True)
+        return
 
     @commands.hybrid_command(name='mis_parlays')
     async def mis_parlays(self, ctx):
@@ -870,26 +765,6 @@ class Betting(commands.Cog):
             color=discord.Color.red()
         )
         await ctx.send(embed=embed, view=view, ephemeral=True)
-
-    @commands.hybrid_command(name='pozo')
-    async def pozo(self, ctx, match_id: str = None):
-        """Consulta el estado del pozo y las cuotas de un partido."""
-        await ctx.defer(ephemeral=True)
-        if match_id:
-            embed = await get_pozo_embed(match_id, bot=self.bot)
-            if embed:
-                await ctx.send(embed=embed, ephemeral=True)
-            else:
-                await ctx.send(f"❌ No se encontró información para el partido `{match_id}`.", ephemeral=True)
-        else:
-            # Mostrar lista de partidos activos en la DB
-            active = await database.get_active_matches_with_names()
-            if not active:
-                await ctx.send("📊 No hay pozos activos con apuestas en este momento.", ephemeral=True)
-                return
-            
-            view = PozoMatchView(active, self.bot)
-            await ctx.send("📊 Selecciona un partido para ver su pozo actual:", view=view, ephemeral=True)
 
     @commands.hybrid_command(name='historial')
     async def historial(self, ctx):

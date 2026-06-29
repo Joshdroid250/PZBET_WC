@@ -52,7 +52,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         await database.add_or_update_match(match_id, home, away, "SCHEDULED")
         
         # 1. El usuario apuesta $50 a Spain
-        await database.place_bet(user_id, match_id, 50.0, "HOME_TEAM")
+        await database.place_bet(user_id, match_id, 50.0, "HOME_TEAM", locked_multiplier=2.5)
         
         # 2. El usuario crea un Parlay de 2 piernas ($20)
         # Match A: Spain vs Germany (Home)
@@ -91,10 +91,9 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         await self.cog.match_processor()
 
         # Verificar cobro de apuesta individual:
-        # El pozo efectivo incluye 500 de la casa, pero el pago queda capado a 10x.
-        # Pago: 50 * 10 = 500. Balance: 30 + 500 = 530.
+        # Pago: 50 * 2.5 = 125. Balance: 30 + 125 = 155.
         balance_after_1 = await database.get_user_balance(user_id)
-        self.assertEqual(balance_after_1, 530.0)
+        self.assertEqual(balance_after_1, 155.0)
         print(f"OK: Apuesta individual pagada. Balance: {balance_after_1}")
 
         # Verificar que el mensaje de resultado tiene el marcador
@@ -112,7 +111,7 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         
         # No debería haber nuevos anuncios ni cambios en el balance
         final_balance_1 = await database.get_user_balance(user_id)
-        self.assertEqual(final_balance_1, 530.0)
+        self.assertEqual(final_balance_1, 155.0)
         self.assertEqual(self.channel.send.call_count, 0)
         print("OK: Candado de duplicidad funciono: Ni pagos ni mensajes extra.")
 
@@ -142,9 +141,9 @@ class TestFullSystemResolution(unittest.IsolatedAsyncioTestCase):
         await self.cog.match_processor()
 
         # El parlay tenía 2 piernas. Pago: 20 * (2^2) = 80.
-        # Balance final: 530 + 80 = 610.
+        # Balance final: 155 + 80 = 235.
         final_balance = await database.get_user_balance(user_id)
-        self.assertEqual(final_balance, 610.0)
+        self.assertEqual(final_balance, 235.0)
         print(f"OK: Parlay pagado. Balance final: {final_balance}")
 
         # Verificar anuncio de parlay

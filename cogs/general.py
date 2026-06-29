@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands, tasks
 import database
 from datetime import datetime
@@ -111,7 +111,7 @@ class General(commands.Cog):
             color=discord.Color.purple()
         )
         embed.add_field(name="👤 Usuario", value="`/join`: Regístrate.\n`/balance`: Mira tu dinero.\n`/historial`: Tus apuestas.\n`/historial_all`: Historial de todos.\n`/top`: Mira el ranking de usuarios.", inline=False)
-        embed.add_field(name="⚽ Apuestas", value="`/matches`: Próximos partidos.\n`/apuestas`: Tus apuestas activas.\n`/parlay`: Crea una apuesta combinada.\n`/mis_parlays`: Mira tus parlays activos.\n`/cashout`: Retira apuestas.\n`/vivo`: Mira los partidos en vivo.\n`/pozo <id>`: Mira el volumen y cuotas del pozo (Público).\n`/marcador`: Resultados en vivo (goles).\n`/reglas`: Sistema de pozo y premios.", inline=False)
+        embed.add_field(name="⚽ Apuestas", value="`/matches`: Próximos partidos.\n`/kalshi`: Consulta cuotas Kalshi.\n`/kalshivivo`: Consulta cuotas Kalshi en vivo.\n`/apuestas`: Tus apuestas activas.\n`/mis_parlays`: Mira parlays activos existentes.\n`/cashout`: Retira apuestas.\n`/vivo`: Mira los partidos en vivo.\n`/marcador`: Resultados en vivo (goles).\n`/reglas`: Sistema de cuotas y premios.", inline=False)
         
         if ctx.author.guild_permissions.administrator:
             embed.add_field(name="⚙️ Administración", value="`/config_roles`: Configura roles y umbrales.\n`/debug_resolve`: Fuerza resolución de partidos.", inline=False)
@@ -154,32 +154,32 @@ class General(commands.Cog):
         """Explica el funcionamiento detallado de las apuestas."""
         embed = discord.Embed(
             title="Reglas de apuestas",
-            description="Las cuotas usan Kalshi como fuente principal cuando esta disponible.",
+            description="Las apuestas individuales usan cuotas Kalshi obligatoriamente.",
             color=discord.Color.blue()
         )
         embed.add_field(
-            name="1. Prioridad Kalshi",
+            name="1. Cuotas Kalshi",
             value="Cuando Kalshi tiene mercado para el partido y tu seleccion, la apuesta se congela con ese multiplicador. Esa cuota no cambia aunque el mercado se mueva despues.",
             inline=False
         )
         embed.add_field(
-            name="2. Pozo local como respaldo",
-            value="El pozo local solo se usa si Kalshi esta desactivado, caido o no responde. Si Kalshi responde pero no hay mercado para tu seleccion, la apuesta no se registra en el pozo para evitar confusiones.",
+            name="2. Sin cuota Kalshi",
+            value="Si Kalshi esta desactivado, caido o no tiene mercado para tu seleccion, la apuesta no se registra.",
             inline=False
         )
         embed.add_field(
             name="3. Consulta antes de apostar",
-            value="Usa /kalshi para escoger un partido y ver los multiplicadores disponibles para local, empate y visitante.",
+            value="Usa /kalshi o /kalshivivo para escoger un partido y ver los multiplicadores disponibles para local, empate y visitante.",
             inline=False
         )
         embed.add_field(
             name="4. Pago",
-            value="Si aciertas, cobras segun la cuota congelada al momento de apostar. Si la fuente fue Kalshi, veras Fuente: Kalshi en la confirmacion y en /apuestas.",
+            value="Si aciertas, cobras segun la cuota Kalshi congelada al momento de apostar. Veras Fuente: Kalshi en la confirmacion y en /apuestas.",
             inline=False
         )
         embed.add_field(
-            name="5. Sin ganadores y bono diario",
-            value="Si se usa pozo local y nadie acierta, el dinero queda en la casa. Si tu balance llega a $0, el bot puede darte el bono diario configurado.",
+            name="5. Bono diario",
+            value="Si tu balance llega a $0, el bot puede darte el bono diario configurado.",
             inline=False
         )
         embed.set_footer(text="Usa /kalshi para revisar cuotas o /matches para apostar.")
@@ -212,3 +212,5 @@ class General(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(General(bot))
+
+

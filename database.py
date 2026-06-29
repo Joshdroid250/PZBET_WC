@@ -214,23 +214,10 @@ async def update_balance(user_id, amount):
         await db.execute('UPDATE users SET balance = ROUND(balance + ?, 2) WHERE user_id = ?', (amount, user_id))
         await db.commit()
 
-async def calculate_locked_multiplier(match_id, amount, prediction, max_multiplier=10.0):
-    amount = round_money(amount)
-    total, pools = await get_match_pools(match_id)
-    prediction_pool = pools.get(prediction, 0.0)
-    effective_total = total + amount
-    effective_prediction_pool = prediction_pool + amount
-    if effective_prediction_pool <= 0:
-        return max_multiplier
-
-    import betting
-    multiplier = (effective_total + betting.HOUSE_INJECTION) / effective_prediction_pool
-    return round_money(min(max_multiplier, multiplier))
-
-async def place_bet(user_id, match_id, amount, prediction, home_score=None, away_score=None, locked_multiplier=None, odds_source='local', odds_reference=None):
+async def place_bet(user_id, match_id, amount, prediction, home_score=None, away_score=None, locked_multiplier=None, odds_source='kalshi', odds_reference=None):
     amount = round_money(amount)
     if locked_multiplier is None:
-        locked_multiplier = await calculate_locked_multiplier(match_id, amount, prediction)
+        raise ValueError('locked_multiplier is required for Kalshi-only betting')
     locked_multiplier = round_money(locked_multiplier)
     async with aiosqlite.connect(DB_PATH) as db:
         await _ensure_column(db, 'bets', 'locked_multiplier', 'REAL')
@@ -316,7 +303,7 @@ async def mark_bet_resolved_by_id(bet_id, payout, won):
         await db.commit()
 
 async def mark_all_bets_resolved_empty(match_id):
-    """Marks bets as resolved with 0 payout if match ended but logic didn't catch specific winners (fallback)."""
+    """Marks unresolved bets with 0 payout when a match is closed without winners."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute('UPDATE bets SET resolved = 1 WHERE match_id = ? AND resolved = 0', (str(match_id),))
         await db.commit()
@@ -371,15 +358,6 @@ async def normalize_money_values():
         await db.execute('UPDATE bets SET payout = ROUND(payout, 2)')
         await db.execute('UPDATE parlays SET payout = ROUND(payout, 2)')
         await db.commit()
-
-async def get_match_pools(match_id):
-    """Returns total pool and a dict of pools per prediction."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute('SELECT prediction, SUM(amount) FROM bets WHERE match_id = ? AND resolved = 0 GROUP BY prediction', (match_id,)) as cursor:
-            rows = await cursor.fetchall()
-            pools = {row[0]: row[1] for row in rows}
-            total = sum(pools.values())
-            return total, pools
 
 async def get_top_users(limit=10):
     """Returns the top users sorted by balance."""

@@ -36,7 +36,7 @@ class TestFifaDB(unittest.TestCase):
             await database.add_or_update_match(match_id, home, away, "IN_PLAY")
             
             # 2. Realizar apuesta con ID alfanumérico
-            await database.place_bet(999, match_id, 10.0, "HOME_TEAM")
+            await database.place_bet(999, match_id, 10.0, "HOME_TEAM", locked_multiplier=2.0)
             
             # 3. Verificar persistencia
             active = await database.get_active_matches_with_names()
@@ -45,10 +45,19 @@ class TestFifaDB(unittest.TestCase):
             self.assertEqual(active[0][1], home)
             self.assertEqual(active[0][2], away)
             
-            # 4. Verificar pools
-            total, pools = await database.get_match_pools(match_id)
-            self.assertEqual(total, 10.0)
-            self.assertEqual(pools["HOME_TEAM"], 10.0)
+            # 4. Verificar apuesta Kalshi congelada
+            db = sqlite3.connect(self.db_path)
+            try:
+                row = db.execute(
+                    "SELECT amount, prediction, locked_multiplier, odds_source FROM bets WHERE match_id = ?",
+                    (match_id,),
+                ).fetchone()
+            finally:
+                db.close()
+            self.assertEqual(row[0], 10.0)
+            self.assertEqual(row[1], "HOME_TEAM")
+            self.assertEqual(row[2], 2.0)
+            self.assertEqual(row[3], "kalshi")
 
         asyncio.run(run_test())
 

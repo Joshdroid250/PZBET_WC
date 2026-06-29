@@ -173,7 +173,7 @@ class TestKalshiOddsMatching(unittest.TestCase):
         self.assertTrue(result['available'])
         self.assertIsNone(result['match'])
 
-    def test_status_unavailable_allows_local_fallback(self):
+    def test_status_unavailable_blocks_bet(self):
         async def run():
             async def fake_fetch(session=None, limit=200):
                 return {'available': False, 'events': []}

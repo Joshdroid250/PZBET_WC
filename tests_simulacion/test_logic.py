@@ -30,7 +30,7 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         match_id = 999
         await database.register_user(user_id)
         await database.add_or_update_match(match_id, "Home Team", "Away Team", "SCHEDULED")
-        await database.place_bet(user_id, match_id, 50.0, "HOME_TEAM")
+        await database.place_bet(user_id, match_id, 50.0, "HOME_TEAM", locked_multiplier=2.0)
         
         balance = await database.get_user_balance(user_id)
         self.assertEqual(balance, 50.0)
@@ -38,6 +38,15 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         bets = await database.get_active_bets_for_match(match_id)
         self.assertEqual(len(bets), 1)
         self.assertEqual(bets[0][2], 50.0)
+
+    async def test_place_bet_requires_locked_multiplier(self):
+        user_id = 12345
+        match_id = 998
+        await database.register_user(user_id)
+        await database.add_or_update_match(match_id, "Home Team", "Away Team", "SCHEDULED")
+
+        with self.assertRaises(ValueError):
+            await database.place_bet(user_id, match_id, 10.0, "HOME_TEAM")
 
     async def test_resolve_match_winners(self):
         # Inyección de la casa es 500.0 por defecto
@@ -47,21 +56,21 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         await database.register_user(user2)
         await database.add_or_update_match(match_id, "Team A", "Team B", "SCHEDULED")
         
-        await database.place_bet(user1, match_id, 60.0, "HOME_TEAM") # Balance: 40
-        await database.place_bet(user2, match_id, 40.0, "AWAY_TEAM") # Balance: 60
+        await database.place_bet(user1, match_id, 60.0, "HOME_TEAM", locked_multiplier=2.5) # Balance: 40
+        await database.place_bet(user2, match_id, 40.0, "AWAY_TEAM", locked_multiplier=3.0) # Balance: 60
         
         # Mock bot object for role updates
         from unittest.mock import MagicMock
         mock_bot = MagicMock()
         mock_bot.guilds = []
         
-        # El multiplicador queda capado a 10x aunque el pozo efectivo sea mayor.
+        # El pago usa la cuota congelada de la apuesta.
         await betting.resolve_match_bets(mock_bot, match_id, "HOME_TEAM")
         
         balance1 = await database.get_user_balance(user1)
         balance2 = await database.get_user_balance(user2)
         
-        self.assertEqual(balance1, 599.8)
+        self.assertEqual(balance1, 190.0)
         self.assertEqual(balance2, 60.0)
 
     async def test_locked_multiplier_pays_original_odds(self):
@@ -84,12 +93,12 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await database.get_user_balance(user2), 175.0)
 
     async def test_no_refund_if_no_winners(self):
-        # Ahora el dinero se queda en el pozo si nadie gana
+        # Si nadie gana, no hay pago.
         user1 = 1
         match_id = 102
         await database.register_user(user1)
         await database.add_or_update_match(match_id, "Team A", "Team B", "SCHEDULED")
-        await database.place_bet(user1, match_id, 50.0, "HOME_TEAM") # Balance: 50
+        await database.place_bet(user1, match_id, 50.0, "HOME_TEAM", locked_multiplier=2.0) # Balance: 50
         
         from unittest.mock import MagicMock
         mock_bot = MagicMock()

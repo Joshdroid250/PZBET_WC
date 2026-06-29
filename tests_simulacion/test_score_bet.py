@@ -24,8 +24,8 @@ class TestScoreBetting(unittest.IsolatedAsyncioTestCase):
         await database.register_user(user2)
         await database.add_or_update_match(match_id, "Home", "Away", "SCHEDULED")
 
-        await database.place_bet(user1, match_id, 100.0, "HOME_TEAM")
-        await database.place_bet(user2, match_id, 20.0, "HOME_TEAM", 2, 1)
+        await database.place_bet(user1, match_id, 100.0, "HOME_TEAM", locked_multiplier=6.0)
+        await database.place_bet(user2, match_id, 20.0, "HOME_TEAM", 2, 1, locked_multiplier=5.17)
 
         mock_bot = MagicMock()
         mock_bot.guilds = []
@@ -42,8 +42,8 @@ class TestScoreBetting(unittest.IsolatedAsyncioTestCase):
         await database.register_user(user2)
         await database.add_or_update_match(match_id, "Home", "Away", "SCHEDULED")
 
-        await database.place_bet(user1, match_id, 100.0, "DRAW")
-        await database.place_bet(user2, match_id, 20.0, "HOME_TEAM", 2, 1)
+        await database.place_bet(user1, match_id, 100.0, "DRAW", locked_multiplier=2.0)
+        await database.place_bet(user2, match_id, 20.0, "HOME_TEAM", 2, 1, locked_multiplier=10.0)
 
         mock_bot = MagicMock()
         mock_bot.guilds = []

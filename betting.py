@@ -1,5 +1,4 @@
 import database
-import os
 
 def _safe_print(*args, **kwargs):
     try:
@@ -7,16 +6,6 @@ def _safe_print(*args, **kwargs):
     except UnicodeEncodeError:
         text = " ".join(str(arg) for arg in args)
         print(text.encode("ascii", "replace").decode("ascii"), **kwargs)
-
-# Cantidad que el bot "apuesta" simbólicamente para que siempre haya premio
-HOUSE_INJECTION = float(os.getenv('HOUSE_INJECTION', '500.0'))
-
-def get_multiplier_bar(multiplier, max_val=10.0, length=10):
-    """Genera una barra visual tipo [███░░░] basada en el multiplicador."""
-    filled = int((multiplier / max_val) * length)
-    filled = max(1, min(filled, length)) # Al menos 1 bloque si hay apuesta
-    bar = "█" * filled + "░" * (length - filled)
-    return f"[`{bar}`]"
 
 async def resolve_match_bets(bot, match_id, actual_winner, *score_args):
     """
@@ -39,23 +28,14 @@ async def resolve_match_bets(bot, match_id, actual_winner, *score_args):
             await database.add_or_update_match(match_id, m_info[1], m_info[2], 'FINISHED', actual_winner)
         return []
 
-    # El pozo total incluye lo que apostó la gente + la inyección del bot
-    total_user_pool = sum(bet[2] for bet in bets)
-    total_effective_pool = total_user_pool + HOUSE_INJECTION
-    
     winning_bets = [bet for bet in bets if bet[3] == actual_winner]
-    winning_user_pool = sum(bet[2] for bet in winning_bets)
 
     payouts = []
 
-    if winning_user_pool > 0:
-        fallback_payout_ratio = total_effective_pool / winning_user_pool
-        if fallback_payout_ratio > 10.0: fallback_payout_ratio = 10.0
-
+    if winning_bets:
         for bet_id, user_id, amount, prediction, locked_multiplier in bets:
             is_winner = (prediction == actual_winner)
-            payout_ratio = locked_multiplier if locked_multiplier else fallback_payout_ratio
-            winnings = database.round_money(amount * payout_ratio) if is_winner else 0.0
+            winnings = database.round_money(amount * locked_multiplier) if is_winner and locked_multiplier else 0.0
             
             if is_winner:
                 await database.update_balance(user_id, winnings)

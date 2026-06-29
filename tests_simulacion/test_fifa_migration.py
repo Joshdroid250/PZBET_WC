@@ -30,7 +30,7 @@ class TestFifaMigration(unittest.IsolatedAsyncioTestCase):
         away = "Test Away"
 
         await database.add_or_update_match(match_id, home, away, "SCHEDULED")
-        await database.place_bet(999, match_id, 50.0, "HOME_TEAM")
+        await database.place_bet(999, match_id, 50.0, "HOME_TEAM", locked_multiplier=2.0)
 
         async with database.aiosqlite.connect(self.db_path) as db:
             async with db.execute("SELECT match_id FROM matches WHERE match_id = ?", (match_id,)) as cursor:
@@ -46,7 +46,7 @@ class TestFifaMigration(unittest.IsolatedAsyncioTestCase):
     async def test_active_matches_with_names(self):
         match_id = "yh2o5mrvrjl7"
         await database.add_or_update_match(match_id, "Netherlands", "Japan", "IN_PLAY")
-        await database.place_bet(999, match_id, 10.0, "DRAW")
+        await database.place_bet(999, match_id, 10.0, "DRAW", locked_multiplier=2.0)
 
         active = await database.get_active_matches_with_names()
         self.assertEqual(len(active), 1)

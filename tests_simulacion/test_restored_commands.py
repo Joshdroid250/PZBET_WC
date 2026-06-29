@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 import discord
@@ -81,12 +81,12 @@ class TestRestoredCommands(unittest.IsolatedAsyncioTestCase):
         self.ctx.send.assert_called_with("📝 No tienes apuestas individuales activas.", ephemeral=True)
 
     async def test_parlay_command(self):
-        """Verifica que /parlay requiera al menos 2 partidos."""
+        """Verifica que /parlay este desactivado mientras solo se usa Kalshi."""
         api_football.get_upcoming_matches = AsyncMock(return_value=[
             {'id': 'm1', 'homeTeam': {'name': 'Team A'}, 'awayTeam': {'name': 'Team B'}}
         ])
         await self.cog.parlay.callback(self.cog, self.ctx)
-        self.ctx.send.assert_called_with("⚽ Se necesitan al menos 2 partidos próximos para crear un parlay.", ephemeral=True)
+        self.ctx.send.assert_called_with("Los parlays estan desactivados mientras las apuestas usan solo cuotas Kalshi.", ephemeral=True)
 
     async def test_vivo_command(self):
         """Verifica que /vivo muestre partidos en tiempo real."""
@@ -105,11 +105,23 @@ class TestRestoredCommands(unittest.IsolatedAsyncioTestCase):
         args, kwargs = self.ctx.send.call_args
         self.assertIn("Partidos EN VIVO", kwargs['embed'].title)
 
-    async def test_pozo_command_empty(self):
-        """Verifica /pozo cuando no hay partidos activos."""
-        await self.cog.pozo.callback(self.cog, self.ctx)
-        self.ctx.send.assert_called_with("📊 No hay pozos activos con apuestas en este momento.", ephemeral=True)
-        
+    async def test_kalshivivo_command(self):
+        """Verifica que /kalshivivo muestre partidos en vivo para consultar Kalshi."""
+        api_football.fetch_fifa_live_scores = AsyncMock(return_value={
+            'matches': [{
+                'id': 'm_live',
+                'homeTeam': {'name': 'Live A'},
+                'awayTeam': {'name': 'Live B'},
+                'status': 'IN_PLAY',
+                'utcDate': '2026-06-15T12:00:00Z'
+            }]
+        })
+        await self.cog.kalshivivo.callback(self.cog, self.ctx)
+        self.ctx.send.assert_called()
+        args, kwargs = self.ctx.send.call_args
+        self.assertIn("Kalshi", kwargs['embed'].title)
+        self.assertIsNotNone(kwargs['view'])
+
     async def test_historial_command_empty(self):
         """Verifica /historial vacío."""
         await self.cog.historial.callback(self.cog, self.ctx)
@@ -124,3 +136,4 @@ class TestRestoredCommands(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
