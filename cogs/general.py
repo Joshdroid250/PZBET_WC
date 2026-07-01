@@ -13,13 +13,13 @@ class General(commands.Cog):
 
     @tasks.loop(minutes=30)
     async def daily_bonus(self):
-        """Regala 15 monedas diariamente a los usuarios con balance 0, persistente a reinicios."""
+        """Regala 50 monedas diariamente a los usuarios con balance 0, persistente a reinicios."""
         today = datetime.now().strftime("%Y-%m-%d")
         last_run = await database.get_setting("last_bonus_date")
         
         if last_run != today:
             print(f"🎁 Distribuyendo bono diario ({today}) a usuarios con balance 0...")
-            await database.give_daily_bonus(15.0)
+            await database.give_daily_bonus(50.0)
             await database.set_setting("last_bonus_date", today)
 
     @daily_bonus.before_loop

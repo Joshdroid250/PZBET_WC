@@ -137,9 +137,9 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
             await db.commit()
             
         # Dar bono
-        await database.give_daily_bonus(15.0)
+        await database.give_daily_bonus(50.0)
         balance = await database.get_user_balance(user_id)
-        self.assertEqual(balance, 15.0)
+        self.assertEqual(balance, 50.0)
 
     async def test_parlay_resolution(self):
         user_id = 12345
