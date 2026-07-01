@@ -1,5 +1,6 @@
 import os
 import re
+import unicodedata
 from difflib import SequenceMatcher
 
 import aiohttp
@@ -20,15 +21,23 @@ ALIASES = {
     'us': 'united states',
     'u s': 'united states',
     'korea republic': 'south korea',
+    'cote d ivoire': 'ivory coast',
+    'cote divoire': 'ivory coast',
+    'bosnia herzegovina': 'bosnia and herzegovina',
+    'bosnia herzogovina': 'bosnia and herzegovina',
+    'herzegovina': 'bosnia and herzegovina',
 }
 
 
 def normalize_name(value):
     value = (value or '').lower()
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
     value = re.sub(r'[^a-z0-9 ]+', ' ', value)
     value = re.sub(r'\b(fc|cf|team|national|men|women|womens|mens)\b', ' ', value)
     value = re.sub(r'\s+', ' ', value).strip()
-    return ALIASES.get(value, value)
+    for alias, canonical in sorted(ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        value = re.sub(rf'\b{re.escape(alias)}\b', canonical, value)
+    return value
 
 
 def _text_blob(*parts):

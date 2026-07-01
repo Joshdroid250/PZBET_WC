@@ -84,6 +84,27 @@ class TestCashoutSelect(unittest.IsolatedAsyncioTestCase):
         self.assertIn("No se pudo calcular", message)
         remove_bet.assert_not_awaited()
 
+    async def test_cashout_does_not_credit_when_bet_was_not_removed(self):
+        select = self.make_select()
+        interaction = self.make_interaction()
+
+        with patch.object(betting_cog.CashoutSelect, "values", new_callable=PropertyMock) as values:
+            values.return_value = ["ind_55_400021442_10.0"]
+            with patch.object(betting_cog.api_football, "get_match_details", new=AsyncMock(return_value={
+                "status": "IN_PLAY",
+                "utcDate": "2026-06-19T01:00:00Z",
+            })):
+                with patch.object(betting_cog.api_football, "calculate_match_minute", return_value=45.0):
+                    with patch.object(betting_cog.database, "remove_bet_by_id", new=AsyncMock(return_value=0)):
+                        with patch.object(betting_cog.database, "update_balance", new=AsyncMock()) as update_balance:
+                            await select.callback(interaction)
+
+        interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+        interaction.followup.send.assert_awaited_once()
+        message = interaction.followup.send.await_args.args[0]
+        self.assertIn("No se encontr", message)
+        update_balance.assert_not_awaited()
+
 
 if __name__ == "__main__":
     unittest.main()

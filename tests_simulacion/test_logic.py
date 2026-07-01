@@ -39,6 +39,25 @@ class TestBetBot(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(bets), 1)
         self.assertEqual(bets[0][2], 50.0)
 
+    async def test_cashout_by_bet_id_removes_only_selected_bet(self):
+        user_id = 12345
+        match_id = 997
+        await database.register_user(user_id)
+        await database.add_or_update_match(match_id, "Home Team", "Away Team", "SCHEDULED")
+        await database.place_bet(user_id, match_id, 10.0, "HOME_TEAM", locked_multiplier=2.0)
+        await database.place_bet(user_id, match_id, 15.0, "AWAY_TEAM", locked_multiplier=3.0)
+
+        active = await database.get_user_active_bets(user_id)
+        first_bet_id = active[0][7]
+
+        removed = await database.remove_bet_by_id(user_id, first_bet_id)
+        remaining = await database.get_user_active_bets(user_id)
+
+        self.assertEqual(removed, 1)
+        self.assertEqual(len(remaining), 1)
+        self.assertNotEqual(remaining[0][7], first_bet_id)
+        self.assertEqual(remaining[0][2], 15.0)
+
     async def test_place_bet_requires_locked_multiplier(self):
         user_id = 12345
         match_id = 998

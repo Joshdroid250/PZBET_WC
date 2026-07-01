@@ -256,7 +256,7 @@ async def get_user_active_bets(user_id):
         await _ensure_column(db, 'bets', 'odds_reference', 'TEXT')
         # Join with matches table to get team names
         query = '''
-            SELECT m.home_team, m.away_team, b.amount, b.prediction, m.match_id, b.locked_multiplier, b.odds_source
+            SELECT m.home_team, m.away_team, b.amount, b.prediction, m.match_id, b.locked_multiplier, b.odds_source, b.bet_id
             FROM bets b
             JOIN matches m ON b.match_id = m.match_id
             WHERE b.user_id = ? AND b.resolved = 0
@@ -272,15 +272,27 @@ async def get_bet_amount(user_id, match_id):
 
 async def remove_bet(user_id, match_id):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('DELETE FROM bets WHERE user_id = ? AND match_id = ? AND resolved = 0', (user_id, str(match_id)))
+        cursor = await db.execute('DELETE FROM bets WHERE user_id = ? AND match_id = ? AND resolved = 0', (user_id, str(match_id)))
+        removed = cursor.rowcount
         await db.commit()
+        return removed
+
+async def remove_bet_by_id(user_id, bet_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute('DELETE FROM bets WHERE user_id = ? AND bet_id = ? AND resolved = 0', (user_id, bet_id))
+        removed = cursor.rowcount
+        await db.commit()
+        return removed
 
 async def remove_parlay(user_id, parlay_id):
     """Deletes a parlay and its legs. Payout/Refund logic handled in caller."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('DELETE FROM parlay_legs WHERE parlay_id = ?', (parlay_id,))
-        await db.execute('DELETE FROM parlays WHERE parlay_id = ? AND user_id = ? AND resolved = 0', (parlay_id, user_id))
+        cursor = await db.execute('DELETE FROM parlays WHERE parlay_id = ? AND user_id = ? AND resolved = 0', (parlay_id, user_id))
+        removed = cursor.rowcount
+        if removed:
+            await db.execute('DELETE FROM parlay_legs WHERE parlay_id = ?', (parlay_id,))
         await db.commit()
+        return removed
 
 async def mark_bet_resolved(match_id, user_id, payout, won):
     payout = round_money(payout)

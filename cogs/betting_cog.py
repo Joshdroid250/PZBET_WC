@@ -420,10 +420,12 @@ class CashoutSelect(discord.ui.Select):
         if not is_parlay:
             for item in items:
                 home, away, amount, pred, m_id = item[:5]
+                bet_id = item[7] if len(item) > 7 else None
+                value = f"ind_{bet_id}_{m_id}_{amount}" if bet_id else f"ind_{m_id}_{amount}"
                 options.append(discord.SelectOption(
                     label=f"{home} vs {away}",
                     description=f"Apuesta: ${amount:.2f}",
-                    value=f"ind_{m_id}_{amount}"
+                    value=value
                 ))
         else:
             for p in items:
@@ -446,13 +448,17 @@ class CashoutSelect(discord.ui.Select):
         user_id = interaction.user.id
         val_parts = self.values[0].split('_')
         prefix = val_parts[0]
-        # match_id/parlay_id es val_parts[1], amount es val_parts[2]
         raw_id = val_parts[1]
-        amount = float(val_parts[2])
+        amount = float(val_parts[-1])
         return_amount = amount * 0.8
         
         if prefix == 'ind':
-            match_id = raw_id # Mantener como string para FIFA IDs
+            if len(val_parts) >= 4:
+                bet_id = int(raw_id)
+                match_id = '_'.join(val_parts[2:-1])
+            else:
+                bet_id = None
+                match_id = raw_id # Mantener como string para FIFA IDs
             match_info = await api_football.get_match_details(match_id, session=self.bot.session)
             if not match_info:
                 await interaction.followup.send("No se pudo verificar el estado del partido. Intenta de nuevo en unos segundos.", ephemeral=True)
@@ -472,10 +478,14 @@ class CashoutSelect(discord.ui.Select):
                 await interaction.followup.send("🔒 **Mercado Suspendido**: El partido está terminando. Cashout deshabilitado.", ephemeral=True)
                 return
 
-            await database.remove_bet(user_id, match_id)
+            removed = await database.remove_bet_by_id(user_id, bet_id) if bet_id else await database.remove_bet(user_id, match_id)
         else:
             parlay_id = int(raw_id) # Parlay ID sigue siendo numérico (autoincrement)
-            await database.remove_parlay(user_id, parlay_id)
+            removed = await database.remove_parlay(user_id, parlay_id)
+
+        if not removed:
+            await interaction.followup.send("No se encontró una apuesta activa para retirar. Puede que ya haya sido cobrada o resuelta.", ephemeral=True)
+            return
 
         await database.update_balance(user_id, return_amount)
         

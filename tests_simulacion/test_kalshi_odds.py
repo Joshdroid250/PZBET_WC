@@ -107,6 +107,64 @@ class TestKalshiOddsMatching(unittest.TestCase):
         self.assertEqual(draw['market_ticker'], 'KXWCGAME-26JUN27JORARG-TIE')
         self.assertEqual(draw['multiplier'], 100.0)
 
+    def test_matches_cote_d_ivoire_to_ivory_coast(self):
+        events = [
+            {
+                'event_ticker': 'KXWCGAME-26JUN30CIVNOR',
+                'title': 'Ivory Coast vs Norway',
+                'sub_title': 'CIV vs NOR (Jun 30)',
+                'markets': [
+                    {
+                        'ticker': 'KXWCGAME-26JUN30CIVNOR-CIV',
+                        'title': 'Ivory Coast vs Norway Winner?',
+                        'yes_ask_dollars': '0.40',
+                    },
+                    {
+                        'ticker': 'KXWCGAME-26JUN30CIVNOR-NOR',
+                        'title': 'Ivory Coast vs Norway Winner?',
+                        'yes_ask_dollars': '0.50',
+                    },
+                ],
+            }
+        ]
+
+        home = kalshi_odds.match_market_for_prediction(events, "Côte d'Ivoire", 'Norway', 'HOME_TEAM')
+        away = kalshi_odds.match_market_for_prediction(events, "Côte d'Ivoire", 'Norway', 'AWAY_TEAM')
+
+        self.assertEqual(home['market_ticker'], 'KXWCGAME-26JUN30CIVNOR-CIV')
+        self.assertEqual(home['multiplier'], 2.5)
+        self.assertEqual(away['market_ticker'], 'KXWCGAME-26JUN30CIVNOR-NOR')
+        self.assertEqual(away['multiplier'], 2.0)
+
+    def test_matches_united_states_to_usa_and_bosnia_variants(self):
+        events = [
+            {
+                'event_ticker': 'KXWCGAME-26JUL01USABIH',
+                'title': 'USA vs Bosnia Herzegovina',
+                'sub_title': 'USA vs BIH (Jul 1)',
+                'markets': [
+                    {
+                        'ticker': 'KXWCGAME-26JUL01USABIH-USA',
+                        'title': 'USA vs Bosnia Herzegovina Winner?',
+                        'yes_ask_dollars': '0.25',
+                    },
+                    {
+                        'ticker': 'KXWCGAME-26JUL01USABIH-BIH',
+                        'title': 'USA vs Bosnia Herzegovina Winner?',
+                        'yes_ask_dollars': '0.50',
+                    },
+                ],
+            }
+        ]
+
+        home = kalshi_odds.match_market_for_prediction(events, 'United States', 'Herzegovina', 'HOME_TEAM')
+        away = kalshi_odds.match_market_for_prediction(events, 'United States', 'Bosnia and Herzegovina', 'AWAY_TEAM')
+
+        self.assertEqual(home['market_ticker'], 'KXWCGAME-26JUL01USABIH-USA')
+        self.assertEqual(home['multiplier'], 4.0)
+        self.assertEqual(away['market_ticker'], 'KXWCGAME-26JUL01USABIH-BIH')
+        self.assertEqual(away['multiplier'], 2.0)
+
     def test_get_multipliers_from_same_event_set(self):
         async def run():
             events = [
