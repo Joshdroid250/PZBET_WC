@@ -165,6 +165,90 @@ class TestKalshiOddsMatching(unittest.TestCase):
         self.assertEqual(away['market_ticker'], 'KXWCGAME-26JUL01USABIH-BIH')
         self.assertEqual(away['multiplier'], 2.0)
 
+    def test_matches_cabo_verde_to_cape_verde(self):
+        events = [
+            {
+                'event_ticker': 'KXWCGAME-26JUL03ARGCPV',
+                'title': 'Argentina vs Cape Verde',
+                'sub_title': 'ARG vs CPV (Jul 3)',
+                'markets': [
+                    {
+                        'ticker': 'KXWCGAME-26JUL03ARGCPV-ARG',
+                        'title': 'Argentina vs Cape Verde Winner?',
+                        'yes_ask_dollars': '0.20',
+                    },
+                    {
+                        'ticker': 'KXWCGAME-26JUL03ARGCPV-CPV',
+                        'title': 'Argentina vs Cape Verde Winner?',
+                        'yes_ask_dollars': '0.40',
+                    },
+                    {
+                        'ticker': 'KXWCGAME-26JUL03ARGCPV-TIE',
+                        'title': 'Argentina vs Cape Verde Winner?',
+                        'yes_ask_dollars': '0.50',
+                    },
+                ],
+            }
+        ]
+
+        home = kalshi_odds.match_market_for_prediction(events, 'Argentina', 'Cabo Verde', 'HOME_TEAM')
+        away = kalshi_odds.match_market_for_prediction(events, 'Argentina', 'Cabo Verde', 'AWAY_TEAM')
+        draw = kalshi_odds.match_market_for_prediction(events, 'Argentina', 'Cabo Verde', 'DRAW')
+
+        self.assertEqual(home['market_ticker'], 'KXWCGAME-26JUL03ARGCPV-ARG')
+        self.assertEqual(home['multiplier'], 5.0)
+        self.assertEqual(away['market_ticker'], 'KXWCGAME-26JUL03ARGCPV-CPV')
+        self.assertEqual(away['multiplier'], 2.5)
+        self.assertEqual(draw['market_ticker'], 'KXWCGAME-26JUL03ARGCPV-TIE')
+        self.assertEqual(draw['multiplier'], 2.0)
+
+    def test_matches_turkiye_to_turkey(self):
+        events = [
+            {
+                'event_ticker': 'KXWCGAME-26JUL03TURUSA',
+                'title': 'Turkey vs USA',
+                'sub_title': 'TUR vs USA (Jul 3)',
+                'markets': [
+                    {
+                        'ticker': 'KXWCGAME-26JUL03TURUSA-TUR',
+                        'title': 'Turkey vs USA Winner?',
+                        'yes_ask_dollars': '0.25',
+                    },
+                    {
+                        'ticker': 'KXWCGAME-26JUL03TURUSA-USA',
+                        'title': 'Turkey vs USA Winner?',
+                        'yes_ask_dollars': '0.50',
+                    },
+                ],
+            }
+        ]
+
+        home = kalshi_odds.match_market_for_prediction(events, 'Türkiye', 'USA', 'HOME_TEAM')
+        away = kalshi_odds.match_market_for_prediction(events, 'Türkiye', 'USA', 'AWAY_TEAM')
+
+        self.assertEqual(home['market_ticker'], 'KXWCGAME-26JUL03TURUSA-TUR')
+        self.assertEqual(home['multiplier'], 4.0)
+        self.assertEqual(away['market_ticker'], 'KXWCGAME-26JUL03TURUSA-USA')
+        self.assertEqual(away['multiplier'], 2.0)
+
+    def test_normalizes_common_fifa_country_variants(self):
+        cases = {
+            'United States of America': 'united states',
+            'Republic of Korea': 'south korea',
+            'Türkiye': 'turkey',
+            'China PR': 'china',
+            'Iran Islamic Republic': 'iran',
+            'UAE': 'united arab emirates',
+            'Kyrgyz Republic': 'kyrgyzstan',
+            'Syrian Arab Republic': 'syria',
+            'Russian Federation': 'russia',
+            'Congo DR': 'democratic republic of congo',
+        }
+
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(kalshi_odds.normalize_name(source), expected)
+
     def test_get_multipliers_from_same_event_set(self):
         async def run():
             events = [
