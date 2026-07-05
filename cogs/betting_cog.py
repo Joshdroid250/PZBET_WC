@@ -15,6 +15,38 @@ def _safe_print(*args, **kwargs):
         text = " ".join(str(arg) for arg in args)
         print(text.encode("ascii", "replace").decode("ascii"), **kwargs)
 
+def get_official_winner(match):
+    score = match.get('score') or {}
+    winner = score.get('winner')
+    if winner in ('HOME_TEAM', 'AWAY_TEAM'):
+        return winner
+
+    penalties = score.get('penalties') or {}
+    home_penalties = penalties.get('home')
+    away_penalties = penalties.get('away')
+    if home_penalties is not None and away_penalties is not None:
+        if home_penalties > away_penalties:
+            return 'HOME_TEAM'
+        if away_penalties > home_penalties:
+            return 'AWAY_TEAM'
+
+    return winner
+
+def get_result_score_text(match):
+    score = match.get('score') or {}
+    full_time = score.get('fullTime') or {}
+    home_score = full_time.get('home')
+    away_score = full_time.get('away')
+    score_text = f"{home_score}-{away_score}"
+
+    penalties = score.get('penalties') or {}
+    home_penalties = penalties.get('home')
+    away_penalties = penalties.get('away')
+    if home_penalties is not None and away_penalties is not None:
+        score_text = f"{score_text}, penales {home_penalties}-{away_penalties}"
+
+    return score_text
+
 class BetModal(discord.ui.Modal, title='Realizar Apuesta'):
     amount = discord.ui.TextInput(
         label='Cantidad a apostar',
@@ -584,8 +616,9 @@ class Betting(commands.Cog):
 
                 # --- CASO A: PARTIDO FINALIZADO ---
                 if f_status == 'FINISHED':
-                    winner = f_match['score']['winner']
+                    winner = get_official_winner(f_match)
                     if winner:
+                        result_score = get_result_score_text(f_match)
                         # Resolver y pagar
                         payouts = await betting.resolve_match_bets(self.bot, m_id, winner)
                         if payouts is None: continue # Ya resuelto
@@ -605,7 +638,7 @@ class Betting(commands.Cog):
                         # Anunciar resultado
                         if channel:
                             winner_display = f_home if winner == 'HOME_TEAM' else f_away if winner == 'AWAY_TEAM' else "Empate"
-                            embed_res = discord.Embed(title=f"🏁 Finalizado: {f_home} vs {f_away}", description=f"El ganador fue: **{winner_display}** ({f_score})", color=discord.Color.gold())
+                            embed_res = discord.Embed(title=f"🏁 Finalizado: {f_home} vs {f_away}", description=f"El ganador fue: **{winner_display}** ({result_score})", color=discord.Color.gold())
                             summary = [f"{'✅' if p['won'] else '❌'} {(self.bot.get_user(p['user_id']) or await self.bot.fetch_user(p['user_id'])).mention}: ${p['payout']:.2f}" for p in payouts]
                             if summary: embed_res.add_field(name="Resumen de Cobros", value="\n".join(summary), inline=False)
                             await channel.send(embed=embed_res)
